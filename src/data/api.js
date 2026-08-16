@@ -4,7 +4,7 @@
  * autenticada em producao) nao encosta em mais nenhum arquivo.
  */
 
-const BASE = '/api/books';
+const BASE = '/api/v1/books';
 
 async function request(url, options) {
   let res;
@@ -27,8 +27,33 @@ const json = (body) => ({
   body: JSON.stringify(body),
 });
 
-/** @returns {Promise<Array<object>>} livros na ordem da estante */
-export const list = () => request(BASE);
+/**
+ * Acervo inteiro, na ordem da estante.
+ *
+ * A rota e paginada por cursor, mas a paginacao morre aqui: o empacotamento por
+ * largura e a ordenacao dependem da lista completa, entao quem chama continua
+ * recebendo um array so. O ganho e ter teto no tamanho de cada resposta — o
+ * dia em que valer a pena desenhar antes de tudo chegar, e este laco que muda.
+ *
+ * `limit` nao vai na URL de proposito: o tamanho de pagina e decisao do
+ * servidor, e mora num lugar so.
+ *
+ * @returns {Promise<Array<object>>} livros na ordem da estante
+ */
+export async function list() {
+  const all = [];
+  let cursor = null;
+
+  do {
+    const url = cursor === null ? BASE : `${BASE}?cursor=${encodeURIComponent(cursor)}`;
+    const page = await request(url);
+    if (!page?.items?.length) break; // guarda contra laco infinito
+    all.push(...page.items);
+    cursor = page.nextCursor ?? null;
+  } while (cursor !== null);
+
+  return all;
+}
 
 export const add = (record) => request(BASE, json(record));
 

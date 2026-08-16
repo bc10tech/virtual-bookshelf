@@ -45,8 +45,8 @@ atende o site inteiro.
 index.html          casca: canvas, FAB, painel-formulário, chips das estantes
 server/             Express + driver oficial do MongoDB (sem Mongoose)
   db.js             conexão única e criação do índice
-  validate.js       validação de entrada
-  books.js          CRUD em /api/books
+  validate.js       validação de entrada (zod)
+  books.js          CRUD em /api/v1/books
 src/
   config.js         TODOS os números do projeto moram aqui
   scene/            three.js: renderer, câmera, estante, livros, capas, tweens
@@ -101,8 +101,10 @@ requisições. As escolhas que sustentam isso:
 | **Sem GSAP, sem framework, sem datepicker, sem icon font** | um tween de 50 linhas, ~10 elementos no DOM, `<input type="date">` nativo e `<symbol>` SVG inline. |
 | **Fonte auto-hospedada** | o cache do browser é particionado por site desde 2020, então o CDN do Google só custaria 2 handshakes e um CSS bloqueante. |
 
-Dependências totais: `three`, `express`, `mongodb`, mais `vite` e `concurrently`
-em desenvolvimento.
+Dependências totais: `three`, `express`, `mongodb` e `zod`, mais `vite` e
+`concurrently` em desenvolvimento. O `zod` valida o corpo das requisições e é
+importado só por `server/`: como o bundle do cliente nunca o alcança, ele não
+entra no orçamento de bytes acima.
 
 ## Dados
 

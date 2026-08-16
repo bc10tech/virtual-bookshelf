@@ -10,16 +10,60 @@ const owner = () => null;
 
 const bad = (res, error, code = 400) => res.status(code).json({ error });
 
-/** GET /api/books — a estante inteira, na ordem de insercao. */
-router.get('/', async (_req, res) => {
-  const list = await books()
-    .find({ userId: owner() })
+// Numeros de servidor, sem relacao com o `config.js` do cliente (que descreve a
+// cena). O cliente nao manda `limit`: deixar o padrao aqui mantem o tamanho de
+// pagina num lugar so.
+const PAGE_LIMIT_DEFAULT = 200;
+const PAGE_LIMIT_MAX = 500;
+
+const parseLimit = (raw) => {
+  const n = Number(raw);
+  // Valor ausente ou absurdo cai no padrao em vez de virar erro: `limit` e
+  // ajuste de transporte, nao parte do pedido.
+  if (!Number.isInteger(n) || n < 1) return PAGE_LIMIT_DEFAULT;
+  return Math.min(n, PAGE_LIMIT_MAX);
+};
+
+/**
+ * GET /api/v1/books — uma pagina da estante, na ordem de insercao.
+ *
+ * O cursor e o proprio `order`, que ja e a sequencia canonica no banco e e
+ * coberto pelo indice `{ userId: 1, order: 1 }`. Paginar por ESTANTE seria o
+ * recorte natural do produto, mas o servidor nao tem como saber onde uma
+ * estante termina: o empacotamento e por largura acumulada (`computeLayout`) e
+ * a ordenacao e preferencia de visualizacao do cliente. Replicar as duas coisas
+ * aqui criaria uma segunda fonte para numeros que so o `config.js` deve ter.
+ *
+ * @returns {{ items: object[], nextCursor: number|null }}
+ */
+router.get('/', async (req, res) => {
+  const limit = parseLimit(req.query.limit);
+
+  let cursor = null;
+  if (req.query.cursor !== undefined) {
+    cursor = Number(req.query.cursor);
+    if (!Number.isInteger(cursor)) return bad(res, 'cursor invalido');
+  }
+
+  const filter = { userId: owner() };
+  if (cursor !== null) filter.order = { $gt: cursor };
+
+  // Um a mais que o pedido: o excedente responde "tem proxima pagina?" sem
+  // custar uma segunda consulta.
+  const rows = await books()
+    .find(filter)
     .sort({ order: 1 })
+    .limit(limit + 1)
     .toArray();
-  res.json(list);
+
+  const items = rows.slice(0, limit);
+  res.json({
+    items,
+    nextCursor: rows.length > limit ? items[items.length - 1].order : null,
+  });
 });
 
-/** POST /api/books — cria um livro no fim da estante. */
+/** POST /api/v1/books — cria um livro no fim da estante. */
 router.post('/', async (req, res) => {
   const parsed = validateBook(req.body);
   if (!parsed.ok) return bad(res, parsed.error);
@@ -52,7 +96,7 @@ router.post('/', async (req, res) => {
   res.status(201).json(doc);
 });
 
-/** PATCH /api/books/:id — atualiza campos soltos. */
+/** PATCH /api/v1/books/:id — atualiza campos soltos. */
 router.patch('/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return bad(res, 'id invalido');
 
@@ -78,7 +122,7 @@ router.patch('/:id', async (req, res) => {
   res.json(doc);
 });
 
-/** DELETE /api/books/:id */
+/** DELETE /api/v1/books/:id */
 router.delete('/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return bad(res, 'id invalido');
 

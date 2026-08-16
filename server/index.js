@@ -14,8 +14,14 @@ app.disable('x-powered-by');
 // que um corpo gigante nao ocupe memoria antes da validacao.
 app.use(express.json({ limit: '16kb' }));
 
+// O health check fica FORA da versao de proposito: ele e endpoint de operacao
+// (uptime check), nao contrato de dados. Versiona-lo so criaria uma segunda URL
+// para o monitoramento acompanhar a cada versao nova.
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
-app.use('/api/books', booksRouter);
+
+// Tudo que devolve dado nasce versionado, antes de existir cliente publicado:
+// depois disso, mudar formato de resposta quebra quem ja instalou.
+app.use('/api/v1/books', booksRouter);
 
 // Em desenvolvimento quem serve o front e o Vite (que faz proxy de /api para
 // ca). Depois de `npm run build`, este mesmo processo serve o dist/ sozinho.
