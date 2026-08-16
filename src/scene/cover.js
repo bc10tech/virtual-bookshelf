@@ -1,5 +1,6 @@
 import { CanvasTexture, SRGBColorSpace, LinearMipmapLinearFilter, LinearFilter } from 'three';
 import { COVER, KD, kdToCss } from '../config.js';
+import { editionKey } from './layout.js';
 
 /**
  * Uma capa vira um atlas 256x256 desenhado em canvas: capa, lombada,
@@ -7,7 +8,10 @@ import { COVER, KD, kdToCss } from '../config.js';
  * 1 draw call.
  */
 
-const FONT = 'Proza Libre';
+// Neuton nao tem peso 600 — o titulo/lombada usam 700.
+const FONT = 'Neuton';
+const W_BOLD = 700;
+const W_REG = 400;
 const PAGES_CSS = kdToCss(KD.bookPages);
 const FOIL_CSS = kdToCss(KD.bookFoil);
 
@@ -26,15 +30,15 @@ let fontsReady;
  */
 export function ensureFonts(text = '') {
   fontsReady ??= Promise.all([
-    document.fonts.load(`600 ${COVER.FRONT_TITLE_PX}px "${FONT}"`),
-    document.fonts.load(`400 ${COVER.SPINE_AUTHOR_PX}px "${FONT}"`),
+    document.fonts.load(`${W_BOLD} ${COVER.FRONT_TITLE_PX}px "${FONT}"`),
+    document.fonts.load(`${W_REG} ${COVER.SPINE_AUTHOR_PX}px "${FONT}"`),
   ]).catch(() => {}); // sem a fonte o desenho continua, so menos bonito
 
   if (!text) return fontsReady;
   return fontsReady.then(() =>
     Promise.all([
-      document.fonts.load(`600 ${COVER.FRONT_TITLE_PX}px "${FONT}"`, text),
-      document.fonts.load(`400 ${COVER.SPINE_AUTHOR_PX}px "${FONT}"`, text),
+      document.fonts.load(`${W_BOLD} ${COVER.FRONT_TITLE_PX}px "${FONT}"`, text),
+      document.fonts.load(`${W_REG} ${COVER.SPINE_AUTHOR_PX}px "${FONT}"`, text),
     ]).catch(() => {}),
   );
 }
@@ -142,7 +146,7 @@ function drawFallbackFront(ctx, rec, cell, accent) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
 
-  ctx.font = `600 ${COVER.FRONT_TITLE_PX}px "${FONT}", Georgia, serif`;
+  ctx.font = `${W_BOLD} ${COVER.FRONT_TITLE_PX}px "${FONT}", Georgia, serif`;
   const lines = wrapLines(ctx, rec.title, cell.w - 36, COVER.FRONT_TITLE_LINES);
   const lh = COVER.FRONT_TITLE_PX * 1.25;
   let y = cell.y + cell.h / 2 - (lines.length * lh) / 2 - 10;
@@ -152,7 +156,7 @@ function drawFallbackFront(ctx, rec, cell, accent) {
   }
 
   if (rec.author) {
-    ctx.font = `400 13px "${FONT}", Georgia, serif`;
+    ctx.font = `${W_REG} ${COVER.FRONT_AUTHOR_PX}px "${FONT}", Georgia, serif`;
     ctx.globalAlpha = 0.8;
     ctx.fillText(fitText(ctx, rec.author, cell.w - 36), cell.x + cell.w / 2, y + 10);
     ctx.globalAlpha = 1;
@@ -185,17 +189,17 @@ function drawSpine(ctx, rec, cell, accent) {
   let author = '';
   let authorW = 0;
   if (rec.author) {
-    ctx.font = `400 ${COVER.SPINE_AUTHOR_PX}px "${FONT}", Georgia, serif`;
+    ctx.font = `${W_REG} ${COVER.SPINE_AUTHOR_PX}px "${FONT}", Georgia, serif`;
     author = fitText(ctx, rec.author, 96);
     authorW = ctx.measureText(author).width;
   }
 
-  ctx.font = `600 ${COVER.SPINE_TITLE_PX}px "${FONT}", Georgia, serif`;
+  ctx.font = `${W_BOLD} ${COVER.SPINE_TITLE_PX}px "${FONT}", Georgia, serif`;
   const titleMax = cell.h - PAD * 2 - (authorW ? authorW + GAP : 0);
   ctx.fillText(fitText(ctx, rec.title, titleMax), PAD, 1);
 
   if (author) {
-    ctx.font = `400 ${COVER.SPINE_AUTHOR_PX}px "${FONT}", Georgia, serif`;
+    ctx.font = `${W_REG} ${COVER.SPINE_AUTHOR_PX}px "${FONT}", Georgia, serif`;
     ctx.globalAlpha = 0.75;
     ctx.textAlign = 'right';
     ctx.fillText(author, cell.h - PAD, 1);
@@ -227,9 +231,11 @@ export async function buildCoverTexture(rec) {
   const img = rec.coverUrl ? await loadImage(rec.coverUrl) : null;
   const sampled = img ? dominantColor(img) : null;
 
-  // Sem capa: escolhe uma das 4 cores de capa do .mtl original pelo id, para
-  // que a estante fique variada mas estavel entre reloads.
-  const palette = KD.bookCovers[Math.abs(hashCode(rec._id)) % KD.bookCovers.length];
+  // Sem capa: escolhe uma das 4 cores de capa do .mtl original pela EDICAO (nao
+  // pelo id do registro), para que a estante fique variada mas dois exemplares
+  // do mesmo livro tenham a mesma cor — o mesmo motivo da altura.
+  const palette =
+    KD.bookCovers[Math.abs(hashCode(editionKey(rec))) % KD.bookCovers.length];
   const accent = sampled ?? {
     r: palette[0] * 255,
     g: palette[1] * 255,

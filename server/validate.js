@@ -115,10 +115,13 @@ export function validateBook(body, { partial = false } = {}) {
 
   // --- nota ---------------------------------------------------------------
   if (has('rating')) {
-    if (!Number.isInteger(body.rating) || body.rating < 0 || body.rating > 5) {
-      return { ok: false, error: 'rating: inteiro de 0 a 5' };
+    const r = body.rating;
+    // Meio ponto e permitido (2.5, 3.5...). Notas inteiras ja gravadas
+    // continuam validas, entao nao ha migracao a fazer.
+    if (typeof r !== 'number' || !Number.isFinite(r) || r < 0 || r > 5 || (r * 2) % 1 !== 0) {
+      return { ok: false, error: 'rating: de 0 a 5, em passos de 0,5' };
     }
-    out.rating = body.rating;
+    out.rating = r;
   } else if (!partial) {
     out.rating = 0;
   }

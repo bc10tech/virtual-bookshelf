@@ -1,11 +1,17 @@
 # virtual-bookshelf
 
 Uma estante de livros virtual em 3D. Você busca o livro, registra quando começou
-e terminou de ler, dá uma nota e escreve a review; o livro aparece grande no
-centro da tela com a capa real e voa para a prateleira.
+e terminou de ler, dá uma nota (com meio ponto) e escreve a review; o livro
+aparece grande no centro da tela com a capa real e voa para a prateleira.
 
 A espessura de cada livro vem do seu número de páginas, e a prateleira enche por
-**largura ocupada** — quando o próximo não cabe, ele sobe para a de cima.
+**largura ocupada**, de cima para baixo — quando o próximo não cabe, ele desce
+para a prateleira seguinte. A estante nasce com 3 vãos e cresce até 5; a partir
+daí nasce uma estante nova, e chips numerados no topo alternam entre elas.
+
+Clicar num livro abre um cartão ao lado dele com a review e os detalhes, com um
+botão para editar ou excluir o registro. Os botões dos cantos inferiores ordenam
+a estante e alternam entre modo claro e escuro.
 
 ## Rodando
 
@@ -44,9 +50,9 @@ server/             Express + driver oficial do MongoDB (sem Mongoose)
 src/
   config.js         TODOS os números do projeto moram aqui
   scene/            three.js: renderer, câmera, estante, livros, capas, tweens
-  data/             acesso à API e busca na Open Library
-  ui/               painel, estrelas, paginador, cartão de detalhes
-public/fonts/       Proza Libre (SIL OFL) auto-hospedada
+  data/             acesso à API, busca na Open Library, ordenação
+  ui/               painel, estrelas, paginador, cartão, menu de ordem, tema
+public/fonts/       Neuton (SIL OFL) auto-hospedada
 ```
 
 **Não há nenhum arquivo de modelo 3D.** A estante nasceu de um `bookshelf.obj`
@@ -61,7 +67,7 @@ importava neles virou código.
 
 ## Decisões de peso
 
-O site inteiro carrega em **~139 KB gzip** de código mais ~49 KB de fonte, em 5
+O site inteiro carrega em **~144 KB gzip** de código mais ~38 KB de fonte, em 5
 requisições. As escolhas que sustentam isso:
 
 | | |
@@ -70,8 +76,10 @@ requisições. As escolhas que sustentam isso:
 | **Estante por código** | 0 KB de asset, 0 KB de loader, 3 draw calls. |
 | **Uma BoxGeometry compartilhada** | todos os livros usam a mesma geometria, com os UVs remapeados uma vez para as células do atlas. A estante inteira são 24 vértices. |
 | **Um atlas por livro** | capa, lombada, contracapa e miolo no mesmo canvas 256². Um livro = 1 textura = 1 material = 1 draw call. |
+| **Cache de material por livro** | ordenar a estante só recalcula posições: nenhum atlas é redesenhado e nenhuma textura sobe para a GPU de novo. |
 | **Render sob demanda** | parado, não existe `requestAnimationFrame` pendente: zero CPU, zero GPU, zero bateria. |
 | **Uma estante por vez** | trocar de estante no paginador descarta as texturas da anterior, então a memória de GPU não cresce com o acervo. |
+| **Tema por tokens CSS** | a cena só troca a cor de fundo; materiais e luzes são os mesmos objetos nos dois modos. |
 | **Sem GSAP, sem framework, sem datepicker, sem icon font** | um tween de 50 linhas, ~10 elementos no DOM, `<input type="date">` nativo e `<symbol>` SVG inline. |
 | **Fonte auto-hospedada** | o cache do browser é particionado por site desde 2020, então o CDN do Google só custaria 2 handshakes e um CSS bloqueante. |
 
@@ -85,20 +93,29 @@ páginas (`number_of_pages_median`) chega na mesma requisição da busca, então
 espessura da lombada não custa nenhuma chamada extra.
 
 Cada livro é um documento em `virtual_bookshelf.books`. Nada de geometria é
-guardado: espessura vem das páginas, altura e profundidade de um hash
-determinístico do id, e a posição do empacotamento por largura — então recarregar
-reproduz exatamente a mesma estante.
+guardado: a espessura vem das páginas, a altura e a profundidade de um hash
+determinístico da **edição** (`olKey`, ou título+autor em cadastro manual), e a
+posição do empacotamento por largura. Recarregar reproduz exatamente a mesma
+estante — e dois exemplares do mesmo livro ficam geometricamente idênticos, que
+é justamente o motivo de a chave ser a obra e não o `_id` do registro.
+
+A ordenação da estante é preferência de visualização, não dado do livro: fica em
+`localStorage`, nunca no banco. O campo `order` continua sendo a ordem de
+inserção, e serve de desempate estável para todos os outros critérios.
 
 ## Ferramentas de desenvolvimento
 
 Com `npm run dev`, o console expõe `__shelf`:
 
 ```js
-__shelf.seed(12, 600)   // 12 livros de 600 páginas
-__shelf.stats()         // draw calls, texturas, geometrias, estantes
-__shelf.layout()        // espessura e posição calculadas de cada livro
-__shelf.camera()        // posição, alvo, distância, aspect
-__shelf.wipe()          // limpa o banco
+__shelf.seed(12, 600)      // 12 livros de 600 páginas
+__shelf.stats()            // draw calls, texturas, geometrias, estantes, ordem, tema
+__shelf.layout()           // espessura e posição calculadas de cada livro
+__shelf.camera()           // posição, alvo, distância, aspect
+__shelf.sort('pages','desc')  // troca a ordenação
+__shelf.card(0, x, y)      // abre o cartão numa âncora arbitrária
+__shelf.edit(0)            // abre o painel em modo edição
+__shelf.wipe()             // limpa o banco
 ```
 
 Nada disso vai para o build de produção.

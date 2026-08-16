@@ -39,7 +39,7 @@ export const SHELF = {
   CLEARANCE: 0.33, // altura livre de um vao (0.350 - 0.020)
 
   MIN_SHELVES: 3, // a estante nasce com 3 vaos, como o modelo original
-  MAX_SHELVES: 6, // ao passar disso, nasce uma nova estante (paginador)
+  MAX_SHELVES: 5, // ao passar disso, nasce uma nova estante (paginador)
 };
 
 /** Largura util interna: 0.680 m. */
@@ -163,7 +163,12 @@ export const LIGHT = {
   DIR_COLOR: 0xfff6e8,
   DIR_INTENSITY: 2.1,
   DIR_POS: [-0.9, 1.4, 1.6],
-  BACKGROUND: 0xf2ede4,
+  /**
+   * Unica coisa da cena que muda com o tema: as cores primarias da interface.
+   * Materiais e luzes sao identicos nos dois modos — a madeira nao deveria
+   * mudar de cor porque a interface mudou.
+   */
+  BACKGROUND: { light: 0xffffe3, dark: 0x6d8196 },
 };
 
 // --------------------------------------------------------------- animacao ---
@@ -178,6 +183,9 @@ export const ANIM = {
   ARC_LIFT: 0.15, // altura do arco da trajetoria
   START_SCALE: 0.6, // nunca 0: escala nao-uniforme zero da matriz normal singular
   SELECT_MS: 300,
+  // Livros mudando de lugar (ordenacao, crescimento da estante, exclusao).
+  // Sem isto a estante daria um corte seco em vez de ler como movimento.
+  REFLOW_MS: 400,
 };
 
 export const ANIM_TOTAL = ANIM.PRESENT_MS + ANIM.HOLD_MS + ANIM.FLY_MS; // 1600 ms
@@ -206,9 +214,12 @@ export const COVER = {
   CELL_BACK: { x: 232, y: 0, w: 12, h: 16 }, // contracapa
   CELL_PAGES: { x: 244, y: 0, w: 12, h: 16 }, // miolo
 
-  SPINE_TITLE_PX: 17,
-  SPINE_AUTHOR_PX: 12,
-  FRONT_TITLE_PX: 22,
+  // Neuton e mais estreita e tem x-height menor que a Proza Libre: os mesmos
+  // tamanhos liam menores na lombada, entao subiram 1-2 px.
+  SPINE_TITLE_PX: 19,
+  SPINE_AUTHOR_PX: 13,
+  FRONT_TITLE_PX: 24,
+  FRONT_AUTHOR_PX: 14,
   FRONT_TITLE_LINES: 4,
 };
 

@@ -5,16 +5,35 @@ import { SHELF, BOOK, bookThickness, shelfFloorY } from '../config.js';
  *
  * A prateleira enche por LARGURA OCUPADA, nao por contagem: a espessura da
  * lombada vem do numero de paginas, entao um calhamaco de 600 paginas toma o
- * lugar de quase quatro livros finos. Quando o proximo livro nao cabe, ele vai
- * para a prateleira de cima; quando as 6 prateleiras enchem, nasce uma estante
- * nova (que o paginador mostra uma de cada vez).
+ * lugar de quase quatro livros finos.
  *
- * Nada disso e persistido: tudo e recalculado a partir de `order`, `pages` e de
- * um hash deterministico do id. Assim o banco fica limpo e um reload reproduz
- * exatamente a mesma estante.
+ * O preenchimento comeca pela prateleira DE CIMA e desce. Quando as 5
+ * prateleiras enchem, nasce uma estante nova (que o paginador mostra uma de
+ * cada vez).
+ *
+ * Nada disso e persistido: tudo e recalculado a partir da ordem corrente, de
+ * `pages` e de um hash deterministico da edicao. Assim o banco fica limpo e um
+ * reload reproduz exatamente a mesma estante.
  */
 
-/** FNV-1a de 32 bits: barato, deterministico e bem distribuido para ids curtos. */
+/**
+ * Identidade da OBRA, nao do registro.
+ *
+ * Usar o `_id` aqui era um bug: cada cadastro gera um UUID novo, entao dois
+ * exemplares do mesmo livro na mesma estante saiam com alturas diferentes. O
+ * `olKey` vem primeiro porque e a chave da obra na Open Library (`/works/OL...`),
+ * estavel entre buscas; o `isbn` que a busca devolve e so uma edicao arbitraria
+ * entre muitas. Cadastro manual cai no titulo+autor normalizado.
+ *
+ * (Quando houver login, salgar esta chave com o `userId` faz a mesma obra ter
+ * alturas diferentes em estantes de pessoas diferentes, sem mudar mais nada.)
+ */
+export const editionKey = (rec) =>
+  String(rec.olKey || rec.isbn || `${rec.title ?? ''}|${rec.author ?? ''}`)
+    .trim()
+    .toLowerCase();
+
+/** FNV-1a de 32 bits: barato, deterministico e bem distribuido para chaves curtas. */
 function fnv1a(str) {
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
@@ -24,13 +43,17 @@ function fnv1a(str) {
   return h >>> 0;
 }
 
-/** Numero estavel em [0,1) derivado do id — nunca Math.random, que mudaria a cada reload. */
-const rand01 = (id, salt) => (fnv1a(id + salt) % 100000) / 100000;
+/** Numero estavel em [0,1) — nunca Math.random, que mudaria a cada reload. */
+const rand01 = (key, salt) => (fnv1a(key + salt) % 100000) / 100000;
 
-/** Dimensoes fisicas de um livro. `pages` manda na espessura; o resto vem do id. */
+/**
+ * Dimensoes fisicas de um livro. `pages` manda na espessura; altura e
+ * profundidade vem da edicao — entao dois exemplares do mesmo livro sao
+ * geometricamente identicos.
+ */
 export function bookDimensions(rec) {
   const thickness = bookThickness(rec.pages);
-  const height = BOOK.HEIGHT_MIN + BOOK.HEIGHT_RANGE * rand01(rec._id, '#h');
+  const height = BOOK.HEIGHT_MIN + BOOK.HEIGHT_RANGE * rand01(editionKey(rec), '#h');
   const depth = Math.min(
     BOOK.DEPTH_MAX,
     Math.max(BOOK.DEPTH_MIN, height / BOOK.DEPTH_RATIO),
@@ -41,16 +64,16 @@ export function bookDimensions(rec) {
 /**
  * @typedef {object} Placement
  * @property {number} caseIndex
- * @property {number} shelfIndex   0 = prateleira de baixo
+ * @property {number} shelfIndex   LOGICO: 0 = prateleira de CIMA
  * @property {number} x            centro da lombada
- * @property {number} floorY
+ * @property {number} floorY       altura do piso ja convertida para fisica
  * @property {number} thickness
  * @property {number} height
  * @property {number} depth
  */
 
 /**
- * @param {Array<object>} records ordenados por `order`
+ * @param {Array<object>} records ja na ordem de exibicao desejada
  * @returns {{ placements: Map<string, Placement>, caseCount: number, shelvesPerCase: number[] }}
  */
 export function computeLayout(records) {
@@ -58,42 +81,51 @@ export function computeLayout(records) {
   const shelvesPerCase = [];
 
   let cursor = SHELF.INNER_MIN_X;
-  let shelfIndex = 0;
+  let shelf = 0; // logico: 0 = a de cima
   let caseIndex = 0;
 
   const noteShelf = () => {
     // Cada estante nasce com 3 vaos (como o modelo original) e so cresce quando
-    // precisa, ate o teto de 6.
+    // precisa, ate o teto de 5.
     shelvesPerCase[caseIndex] = Math.max(
       SHELF.MIN_SHELVES,
-      shelvesPerCase[caseIndex] ?? SHELF.MIN_SHELVES,
-      shelfIndex + 1,
+      shelvesPerCase[caseIndex] ?? 0,
+      shelf + 1,
     );
   };
   noteShelf();
 
+  // --- 1a passada: empacota por largura e descobre quantos vaos cada estante usa
   for (const rec of records) {
     const dims = bookDimensions(rec);
 
     if (cursor + dims.thickness > SHELF.INNER_MAX_X) {
-      shelfIndex++;
+      shelf++;
       cursor = SHELF.INNER_MIN_X;
-      if (shelfIndex >= SHELF.MAX_SHELVES) {
+      if (shelf >= SHELF.MAX_SHELVES) {
         caseIndex++;
-        shelfIndex = 0;
+        shelf = 0;
       }
       noteShelf();
     }
 
     placements.set(rec._id, {
       caseIndex,
-      shelfIndex,
+      shelfIndex: shelf,
       x: cursor + dims.thickness / 2,
-      floorY: shelfFloorY(shelfIndex),
+      floorY: 0, // preenchido na 2a passada
       ...dims,
     });
 
     cursor += dims.thickness + BOOK.GAP;
+  }
+
+  // --- 2a passada: converte prateleira logica em fisica
+  // So agora sabemos a altura de cada estante, e a prateleira de cima e a
+  // ultima fisica. E por isso que crescer um vao empurra TODOS os livros da
+  // estante 0.350 m para cima: eles continuam pendurados no topo.
+  for (const p of placements.values()) {
+    p.floorY = shelfFloorY(shelvesPerCase[p.caseIndex] - 1 - p.shelfIndex);
   }
 
   return {

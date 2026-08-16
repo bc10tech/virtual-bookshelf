@@ -10,14 +10,14 @@
 
     <link
       rel="preload"
-      href="/fonts/proza-libre-400-latin.woff2"
+      href="/fonts/neuton-400-latin.woff2"
       as="font"
       type="font/woff2"
       crossorigin
     />
     <link
       rel="preload"
-      href="/fonts/proza-libre-600-latin.woff2"
+      href="/fonts/neuton-700-latin.woff2"
       as="font"
       type="font/woff2"
       crossorigin
@@ -82,12 +82,20 @@
           <p id="search-msg" class="msg" role="status" hidden></p>
         </div>
 
-        <!-- So aparece na entrada manual: sem a Open Library nao ha contagem de
-             paginas, e e ela que define a espessura da lombada. -->
-        <div class="field" id="pages-field" hidden>
+        <!-- Sempre visivel. Fica somente-leitura quando a Open Library informou a
+             contagem: e ela que define a espessura da lombada, e reescrever esse
+             numero a mao so faria o livro mentir sobre si mesmo. -->
+        <div class="field" id="pages-field">
           <label for="pages">Páginas</label>
-          <input id="pages" type="number" inputmode="numeric" min="1" max="5000" placeholder="300" />
-          <p class="hint">Define a espessura do livro na estante.</p>
+          <input
+            id="pages"
+            type="number"
+            inputmode="numeric"
+            min="1"
+            max="5000"
+            placeholder="300"
+          />
+          <p class="hint" id="pages-hint">Define a espessura do livro na estante.</p>
         </div>
 
         <div class="row">
@@ -120,10 +128,51 @@
         <p id="form-msg" class="msg msg--error" role="alert" hidden></p>
 
         <div class="actions">
+          <!-- Longe do Confirmar de proposito, e so aparece no modo edicao. -->
+          <button type="button" class="btn btn--danger" id="delete" hidden>Excluir</button>
           <button type="button" class="btn btn--ghost" id="cancel">Cancelar</button>
           <button type="submit" class="btn btn--primary" id="confirm">Confirmar</button>
         </div>
       </form>
+    </div>
+
+    <!-- Canto inferior esquerdo: o botao de icone revela "Ordenar por", que abre
+         o popover com os criterios. -->
+    <div class="corner corner--left">
+      <div id="sort-menu" class="sortmenu" role="menu" aria-label="Ordenar por" hidden></div>
+      <button
+        id="sort-by"
+        class="pill"
+        type="button"
+        aria-expanded="false"
+        aria-controls="sort-menu"
+        hidden
+      >
+        Ordenar por
+      </button>
+      <button
+        id="corner-left"
+        class="fab"
+        type="button"
+        aria-expanded="false"
+        aria-controls="sort-by"
+        aria-label="Opções da estante"
+        title="Opções da estante"
+      >
+        <svg class="icon" aria-hidden="true"><use href="#i-sort" /></svg>
+      </button>
+    </div>
+
+    <div class="corner corner--right">
+      <button
+        id="theme"
+        class="fab"
+        type="button"
+        aria-label="Alternar modo claro e escuro"
+        title="Alternar modo claro e escuro"
+      >
+        <svg class="icon" aria-hidden="true"><use href="#i-sun" /></svg>
+      </button>
     </div>
 
     <aside id="details" class="details" aria-live="off" hidden></aside>
@@ -157,6 +206,41 @@
       <symbol id="i-star" viewBox="0 0 24 24">
         <path
           d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.4-5.8-3-5.8 3 1.1-6.4L2.6 9.4l6.5-.9z"
+        />
+      </symbol>
+      <symbol id="i-sort" viewBox="0 0 24 24">
+        <path
+          d="M4 6h15M4 12h10M4 18h5"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-pencil" viewBox="0 0 24 24">
+        <path
+          d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17v3z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linejoin="round"
+        />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="12" r="4" />
+          <path
+            d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
+          />
+        </g>
+      </symbol>
+      <symbol id="i-moon" viewBox="0 0 24 24">
+        <path
+          d="M20.5 14.7A8.6 8.6 0 0 1 9.3 3.5a8.6 8.6 0 1 0 11.2 11.2z"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linejoin="round"
         />
       </symbol>
     </svg>

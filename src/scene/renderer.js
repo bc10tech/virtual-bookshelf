@@ -61,7 +61,7 @@ export function initRenderer(canvas) {
   });
 
   setPixelRatioCap();
-  scene.background = new Color(LIGHT.BACKGROUND);
+  scene.background = new Color(LIGHT.BACKGROUND.light);
 
   const hemi = new HemisphereLight(LIGHT.HEMI_SKY, LIGHT.HEMI_GROUND, LIGHT.HEMI_INTENSITY);
   const dir = new DirectionalLight(LIGHT.DIR_COLOR, LIGHT.DIR_INTENSITY);
@@ -97,6 +97,12 @@ let onContextRestored = null;
 export const setContextRestoreHandler = (fn) => {
   onContextRestored = fn;
 };
+
+/** Troca so o fundo da cena. `setHex` ja interpreta o valor como sRGB. */
+export function setSceneBackground(theme) {
+  scene.background.setHex(LIGHT.BACKGROUND[theme] ?? LIGHT.BACKGROUND.light);
+  invalidate();
+}
 
 export function resizeRenderer(w, h) {
   // `false` porque o CSS e dono do layout do canvas (width/height 100%).

@@ -1,12 +1,16 @@
 import './styles.css';
 
-import { hasWebGL, initRenderer, resizeRenderer } from './scene/renderer.js';
+import { hasWebGL, initRenderer, resizeRenderer, setSceneBackground } from './scene/renderer.js';
 import { initControls } from './scene/camera.js';
 import { ensureFonts } from './scene/cover.js';
 import {
   initStage,
   addRecord,
+  updateRecord,
+  removeRecord,
   setActiveCase,
+  setSort,
+  currentSort,
   setOnSelect,
   setOnCasesChanged,
   bindPicking,
@@ -15,6 +19,8 @@ import {
 import { createPanel } from './ui/panel.js';
 import { createPager } from './ui/pager.js';
 import { createDetails } from './ui/details.js';
+import { createSortMenu } from './ui/sortMenu.js';
+import { createTheme } from './ui/theme.js';
 import * as api from './data/api.js';
 
 const $ = (id) => document.getElementById(id);
@@ -61,10 +67,15 @@ async function boot() {
   // ainda nao carregada ficaria com o fallback assado na textura para sempre.
   ensureFonts();
 
+  // O tema so mexe no fundo da cena; materiais e luzes ficam iguais.
+  createTheme($('theme'), (theme) => setSceneBackground(theme));
+
   const details = createDetails($('details'));
   details.onClose = () => deselect();
 
-  setOnSelect((rec) => (rec ? details.show(rec) : details.hide()));
+  // A ancora e o ponto da tela onde o usuario clicou: o cartao nasce junto do
+  // livro, e se grampeia sozinho para nunca ficar cortado.
+  setOnSelect((rec, anchor) => (rec ? details.show(rec, anchor) : details.hide()));
 
   const pager = createPager($('pager'), (i) => {
     details.hide();
@@ -72,7 +83,20 @@ async function boot() {
   });
   setOnCasesChanged((count, active) => pager.update(count, active));
 
-  createPanel({
+  const sortMenu = createSortMenu({
+    toggle: $('corner-left'),
+    pill: $('sort-by'),
+    menu: $('sort-menu'),
+    getSort: currentSort,
+    onSelect: (next) => {
+      details.hide();
+      setSort(next).catch((err) => console.error('[app]', err));
+    },
+  });
+
+  // O retorno do painel e guardado: e por ele que o botao "Editar" do cartao
+  // reabre o formulario num registro que ja existe.
+  const panel = createPanel({
     async onSubmit(record) {
       // Persiste antes de animar: se o servidor recusar, nada aparece na
       // estante e a mensagem de erro fica no proprio formulario.
@@ -94,7 +118,27 @@ async function boot() {
           toast('O livro foi salvo, mas não consegui desenhá-lo na estante.');
         });
     },
+
+    async onUpdate(id, patch) {
+      const saved = await api.update(id, patch);
+      details.hide();
+      await updateRecord(saved);
+      announce(`${saved.title} atualizado.`);
+    },
+
+    async onDelete(id) {
+      await api.remove(id);
+      details.hide();
+      await removeRecord(id);
+      announce('Livro removido da estante.');
+    },
   });
+
+  details.onEdit = (rec) => {
+    details.hide();
+    sortMenu.close();
+    panel.openForEdit(rec);
+  };
 
   let initial = [];
   try {
@@ -111,7 +155,7 @@ async function boot() {
     announce(`${initial.length} ${initial.length === 1 ? 'livro' : 'livros'} na estante.`);
   }
 
-  if (import.meta.env.DEV) installDebugHooks();
+  if (import.meta.env.DEV) installDebugHooks({ details, panel });
 }
 
 /**
@@ -123,8 +167,10 @@ async function boot() {
  *   __shelf.stats()         -> draw calls, texturas, estantes
  *   __shelf.wipe()          -> limpa o banco
  */
-async function installDebugHooks() {
-  const { renderer, booksGroup, camera, scene: sceneRef } = await import('./scene/renderer.js');
+async function installDebugHooks({ details, panel }) {
+  const { renderer, booksGroup, camera, scene: sceneRef } = await import(
+    './scene/renderer.js'
+  );
   const { controls } = await import('./scene/camera.js');
   const { allRecords, caseCount } = await import('./scene/stage.js');
 
@@ -140,6 +186,20 @@ async function installDebugHooks() {
       canvas: [renderer.domElement.width, renderer.domElement.height],
       dpr: renderer.getPixelRatio(),
     }),
+    /**
+     * Renderiza e devolve a cena como data URL. O render tem de acontecer na
+     * MESMA tarefa da leitura: com `preserveDrawingBuffer: false` (que e o que
+     * queremos em producao) o buffer e descartado no fim do frame.
+     */
+    snapshot(width = 420, quality = 0.6) {
+      renderer.render(sceneRef, camera);
+      const src = renderer.domElement;
+      const out = document.createElement('canvas');
+      out.width = width;
+      out.height = Math.round((width * src.height) / src.width);
+      out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
+      return out.toDataURL('image/jpeg', quality);
+    },
     /** Posicao de um livro em coordenadas de tela, para simular cliques reais. */
     screenOf(title) {
       const m = booksGroup.children.find((c) => c.userData.record?.title === title);
@@ -156,8 +216,10 @@ async function installDebugHooks() {
       allRecords().map((r) => {
         const m = booksGroup.children.find((c) => c.userData.record?._id === r._id);
         return {
+          id: r._id,
           titulo: r.title,
           paginas: r.pages,
+          nota: r.rating,
           espessura: m ? r3(m.scale.x) : null,
           prateleira: m ? m.userData.placement.shelfIndex : null,
           estante: m ? m.userData.placement.caseIndex : null,
@@ -165,6 +227,20 @@ async function installDebugHooks() {
           y: m ? r3(m.position.y) : null,
         };
       }),
+    stats: () => ({
+      drawCalls: renderer.info.render.calls,
+      texturas: renderer.info.memory.textures,
+      geometrias: renderer.info.memory.geometries,
+      livrosNaCena: booksGroup.children.length,
+      livrosNoTotal: allRecords().length,
+      estantes: caseCount(),
+      ordem: currentSort(),
+      tema: document.documentElement.dataset.theme,
+    }),
+    sort: (by, dir = 'asc') => setSort({ by, dir }),
+    /** Abre o cartao numa ancora arbitraria — testa o grampo contra a viewport. */
+    card: (index, x, y) => details.show(allRecords()[index], { x, y }),
+    edit: (index) => panel.openForEdit(allRecords()[index]),
     async seed(n = 5, pages = 300) {
       for (let i = 0; i < n; i++) {
         const saved = await api.add({
@@ -179,28 +255,6 @@ async function installDebugHooks() {
       }
       return this.stats();
     },
-    /**
-     * Renderiza e devolve a cena como data URL. O render tem de acontecer na
-     * MESMA tarefa da leitura: com `preserveDrawingBuffer: false` (que e o que
-     * queremos em producao) o buffer e descartado no fim do frame.
-     */
-    snapshot(width = 420, quality = 0.6) {
-      renderer.render(sceneRef, camera);
-      const src = renderer.domElement;
-      const out = document.createElement('canvas');
-      out.width = width;
-      out.height = Math.round((width * src.height) / src.width);
-      out.getContext('2d').drawImage(src, 0, 0, out.width, out.height);
-      return out.toDataURL('image/jpeg', quality);
-    },
-    stats: () => ({
-      drawCalls: renderer.info.render.calls,
-      texturas: renderer.info.memory.textures,
-      geometrias: renderer.info.memory.geometries,
-      livrosNaCena: booksGroup.children.length,
-      livrosNoTotal: allRecords().length,
-      estantes: caseCount(),
-    }),
     async wipe() {
       for (const r of [...allRecords()]) await api.remove(r._id);
       location.reload();

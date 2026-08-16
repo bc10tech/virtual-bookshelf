@@ -1,45 +1,48 @@
 /* ------------------------------------------------------------------ fonte ---
-   Proza Libre auto-hospedada. O cache do browser e particionado por site desde
-   2020, entao o CDN do Google nao traria cache compartilhado — so 2 handshakes
-   extras e um CSS que bloqueia a renderizacao (~150-250 ms de FCP em 4G).
-   O subset `latin-ext` so e baixado se algum titulo pedir um glifo dele. */
+   Neuton auto-hospedada. O cache do browser e particionado por site desde 2020,
+   entao o CDN do Google nao traria cache compartilhado — so 2 handshakes extras
+   e um CSS que bloqueia a renderizacao (~150-250 ms de FCP em 4G).
+   O subset `latin-ext` so e baixado se algum titulo pedir um glifo dele.
+
+   Neuton nao tem peso 600: os pesos disponiveis sao 200/300/400/700/800. Onde o
+   projeto pedia 600 (titulos, rotulos, lombadas), o peso agora e 700. */
 
 @font-face {
-  font-family: 'Proza Libre';
+  font-family: 'Neuton';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/proza-libre-400-latin.woff2') format('woff2');
+  src: url('/fonts/neuton-400-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Proza Libre';
+  font-family: 'Neuton';
   font-style: normal;
   font-weight: 400;
   font-display: swap;
-  src: url('/fonts/proza-libre-400-latin-ext.woff2') format('woff2');
+  src: url('/fonts/neuton-400-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Proza Libre';
+  font-family: 'Neuton';
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
   font-display: swap;
-  src: url('/fonts/proza-libre-600-latin.woff2') format('woff2');
+  src: url('/fonts/neuton-700-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Proza Libre';
+  font-family: 'Neuton';
   font-style: normal;
-  font-weight: 600;
+  font-weight: 700;
   font-display: swap;
-  src: url('/fonts/proza-libre-600-latin-ext.woff2') format('woff2');
+  src: url('/fonts/neuton-700-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
@@ -47,31 +50,60 @@
 
 /* ----------------------------------------------------------------- tokens --- */
 
+/* MODO CLARO — cor primaria #FFFFE3.
+   O acento e o nogueira da propria estante, para interface e cena parecerem o
+   mesmo objeto. */
 :root {
-  /* Derivados das cores do proprio bookshelf.mtl, para a interface e a cena
-     parecerem o mesmo objeto. */
-  --bg: #f2ede4;
-  --surface: #fbf8f2;
-  --surface-2: #f4eee4;
-  --ink: #2a1b10;
-  --ink-soft: #6b584a;
-  --ink-faint: #9c8b7c;
-  --line: #e2d8c8;
+  --bg: #ffffe3;
+  --surface: #fffffa;
+  --surface-2: #f6f3da;
+  --ink: #2a2410;
+  --ink-soft: #5f5a3d;
+  --ink-faint: #928c6b;
+  --line: #e6e2bd;
   --accent: #6b3f22;
   --accent-hover: #56321a;
   --accent-ink: #fff6e8;
   --star: #b18c46;
   --danger: #8c2f22;
 
+  --focus-ring: rgb(107 63 34 / 0.16);
+  --vignette: rgb(88 62 38 / 0.12);
+
   --r-sm: 10px;
   --r-md: 16px;
   --r-lg: 20px;
 
-  --shadow-sm: 0 1px 2px rgb(42 27 16 / 0.06), 0 2px 8px rgb(42 27 16 / 0.06);
-  --shadow-lg: 0 8px 20px rgb(42 27 16 / 0.1), 0 2px 6px rgb(42 27 16 / 0.08);
+  --shadow-sm: 0 1px 2px rgb(42 36 16 / 0.07), 0 2px 8px rgb(42 36 16 / 0.07);
+  --shadow-lg: 0 8px 20px rgb(42 36 16 / 0.12), 0 2px 6px rgb(42 36 16 / 0.09);
 
-  --pad: 16px;
   --safe-b: env(safe-area-inset-bottom, 0px);
+}
+
+/* MODO ESCURO — cor primaria #6D8196.
+   Como #6D8196 e um tom MEDIO, as superficies vao mais escuras que o fundo, com
+   tinta clara: e isso que le como modo escuro (superficies mais claras que um
+   fundo medio leriam como um modo claro azulado). O acento vira o dourado do
+   material `book_foil` do modelo original, que amarra com as lombadas. */
+:root[data-theme='dark'] {
+  --bg: #6d8196;
+  --surface: #2f3a45;
+  --surface-2: #3b4854;
+  --ink: #eef3f7;
+  --ink-soft: #c2ced9;
+  --ink-faint: #94a3b0;
+  --line: #4a5864;
+  --accent: #dbc68f;
+  --accent-hover: #e9d7a8;
+  --accent-ink: #241d10;
+  --star: #e8c978;
+  --danger: #ff9c91;
+
+  --focus-ring: rgb(219 198 143 / 0.22);
+  --vignette: rgb(10 18 26 / 0.3);
+
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.25), 0 2px 8px rgb(0 0 0 / 0.2);
+  --shadow-lg: 0 10px 26px rgb(0 0 0 / 0.35), 0 2px 8px rgb(0 0 0 / 0.25);
 }
 
 /* ------------------------------------------------------------------ reset --- */
@@ -80,6 +112,13 @@
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+/* O atributo `hidden` vale `display: none` na folha do browser, e QUALQUER
+   regra de autor com `display` vence — foi assim que o paginador vazio ficou
+   aparecendo como uma pilula branca no topo mesmo escondido. */
+[hidden] {
+  display: none !important;
 }
 
 html,
@@ -93,8 +132,10 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Proza Libre', Georgia, 'Times New Roman', serif;
-  font-size: 16px;
+  font-family: 'Neuton', Georgia, 'Times New Roman', serif;
+  /* Neuton tem x-height menor que a Proza Libre: no mesmo tamanho em px ela le
+     visivelmente menor, entao a base sobe 1 px para compensar. */
+  font-size: 17px;
   line-height: 1.45;
   overflow: hidden;
   overscroll-behavior: none; /* sem puxar-para-recarregar por cima da cena */
@@ -149,11 +190,7 @@ body {
   position: fixed;
   inset: 0;
   pointer-events: none;
-  background: radial-gradient(
-    ellipse at 50% 42%,
-    transparent 45%,
-    rgb(88 62 38 / 0.12) 100%
-  );
+  background: radial-gradient(ellipse at 50% 42%, transparent 45%, var(--vignette) 100%);
 }
 
 .fallback {
@@ -168,10 +205,10 @@ body {
 
 /* -------------------------------------------------------------------- FAB --- */
 
+/* Estilo compartilhado por todos os botoes flutuantes: adicionar (topo-direito),
+   opcoes da estante (inferior-esquerdo) e tema (inferior-direito). A POSICAO nao
+   mora aqui — vem de `#fab` ou de `.corner`. */
 .fab {
-  position: fixed;
-  top: max(16px, env(safe-area-inset-top, 0px));
-  right: 16px;
   width: 52px;
   height: 52px;
   display: grid;
@@ -182,7 +219,6 @@ body {
   color: var(--accent);
   box-shadow: var(--shadow-sm);
   cursor: pointer;
-  z-index: 30;
   transition:
     transform 0.14s ease,
     opacity 0.14s ease,
@@ -197,6 +233,112 @@ body {
   transform: scale(0.7);
   opacity: 0;
   pointer-events: none;
+}
+
+#fab {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  right: 16px;
+  z-index: 30;
+}
+
+/* Pilhas dos cantos inferiores: o botao fica embaixo e o que ele revela cresce
+   para cima. */
+.corner {
+  position: fixed;
+  bottom: max(16px, var(--safe-b));
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transition:
+    transform 0.14s ease,
+    opacity 0.14s ease;
+}
+
+.corner--left {
+  left: 16px;
+  align-items: flex-start;
+}
+
+.corner--right {
+  right: 16px;
+  align-items: flex-end;
+}
+
+.corner.is-hidden {
+  transform: scale(0.7);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Botao rotulado, mesma linguagem visual do .fab. */
+.pill {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition:
+    transform 0.14s ease,
+    opacity 0.14s ease,
+    background-color 0.14s ease;
+}
+
+.pill:hover {
+  background: var(--surface-2);
+}
+
+/* ------------------------------------------------------- menu de ordenacao --- */
+
+.sortmenu {
+  min-width: 244px;
+  max-height: min(58dvh, 420px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  animation: card-in 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.sortmenu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sortmenu__item:hover {
+  background: var(--surface-2);
+}
+
+.sortmenu__item[aria-checked='true'] {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+.sortmenu__dir {
+  font-size: 0.78rem;
+  opacity: 0.75;
+  white-space: nowrap;
 }
 
 .icon-btn {
@@ -264,7 +406,7 @@ body {
 .panel__head h2 {
   margin: 0;
   font-size: 1.12rem;
-  font-weight: 600;
+  font-weight: 700;
   letter-spacing: 0.01em;
 }
 
@@ -282,18 +424,23 @@ body {
   margin: 0;
   padding: 0;
   border: 0;
+  /* Sem isto o grid ESTICA as linhas para preencher a altura da celula, e um
+     campo com dica (3 linhas) faz o vizinho sem dica (2 linhas) crescer o input
+     e empurra-lo para baixo — era o desalinhamento das duas datas. */
+  align-content: start;
 }
 
 .row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  align-items: start;
 }
 
 label,
 legend {
   font-size: 0.82rem;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink-soft);
   padding: 0;
 }
@@ -314,10 +461,28 @@ textarea {
   padding: 9px 11px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background: #fff;
+  background: var(--field-bg, #fff);
+  color: var(--ink);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
+}
+
+/* Somente-leitura: o valor veio da Open Library e nao deve ser reescrito. */
+input[readonly] {
+  background: var(--surface-2);
+  color: var(--ink-soft);
+  cursor: default;
+}
+
+:root[data-theme='dark'] {
+  --field-bg: #26303a;
+}
+
+/* Os seletores de data nativos desenham o icone em preto: sem isto ele some no
+   fundo escuro do campo. */
+:root[data-theme='dark'] input[type='date']::-webkit-calendar-picker-indicator {
+  filter: invert(1) opacity(0.7);
 }
 
 textarea {
@@ -338,7 +503,7 @@ button:focus-visible,
 input:focus,
 textarea:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgb(107 63 34 / 0.1);
+  box-shadow: 0 0 0 3px var(--focus-ring);
   outline: none;
 }
 
@@ -434,7 +599,7 @@ textarea:user-invalid {
 .ac__title {
   display: block;
   font-size: 0.88rem;
-  font-weight: 600;
+  font-weight: 700;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -452,7 +617,7 @@ textarea:user-invalid {
 .ac__manual {
   color: var(--accent);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 /* --------------------------------------------------------------- estrelas --- */
@@ -460,15 +625,33 @@ textarea:user-invalid {
 .stars-field {
   display: grid;
   gap: 4px;
+  /* O botao Limpar e ancorado aqui, alinhado com a legenda: na linha das
+     estrelas ele nao caberia (5 slots + valor ja ocupam 274 dos 327 px uteis). */
+  position: relative;
 }
 
 .stars {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 8px;
 }
 
-.stars input {
+.stars__row {
+  display: flex;
+  align-items: center;
+}
+
+/* Um slot = uma estrela = duas metades clicaveis de 24 px. */
+.star {
+  --glyph: 28px;
+  position: relative;
+  display: block;
+  flex: none;
+  width: 48px;
+  height: 48px;
+}
+
+.star input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -476,37 +659,69 @@ textarea:user-invalid {
   pointer-events: none;
 }
 
-.stars label {
-  display: grid;
-  place-items: center;
-  width: 44px; /* alvo de 44 px mesmo com o glifo em 26 px */
-  height: 44px;
+.star__half {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: 50%;
+  z-index: 2;
   cursor: pointer;
-  color: var(--line);
-  transition: color 0.12s ease;
 }
 
-.stars label svg {
-  width: 26px;
-  height: 26px;
+.star__half--l {
+  left: 0;
+}
+.star__half--r {
+  right: 0;
+}
+
+.star__bg,
+.star__fill {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: var(--glyph);
+  height: var(--glyph);
   fill: currentColor;
 }
 
-/* Todas as estrelas ate a marcada ficam preenchidas. `:has` deixa isto ser
-   puro CSS, sem uma classe por estrela mantida em JS. */
-.stars label.is-on {
-  color: var(--star);
+.star__bg {
+  color: var(--line);
 }
 
-.stars input:focus-visible + label {
+/* O recorte e o que da o meio ponto: a mesma estrela, cortada ao meio. */
+.star__fill {
+  color: var(--star);
+  clip-path: inset(0 100% 0 0);
+  transition: clip-path 0.12s ease;
+}
+
+.star.is-half .star__fill {
+  clip-path: inset(0 50% 0 0);
+}
+
+.star.is-full .star__fill {
+  clip-path: inset(0 0 0 0);
+}
+
+.star input:focus-visible + .star__half {
   outline: 2px solid var(--accent);
-  outline-offset: -4px;
+  outline-offset: -3px;
   border-radius: 8px;
 }
 
+.stars__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--ink-soft);
+  min-width: 2ch;
+}
+
 .stars__clear {
-  margin-left: 6px;
-  padding: 6px 8px;
+  position: absolute;
+  top: -2px;
+  right: 0;
+  padding: 4px 8px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -524,6 +739,7 @@ textarea:user-invalid {
 
 .actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-top: 2px;
@@ -534,7 +750,7 @@ textarea:user-invalid {
   padding: 0 18px;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
-  font-weight: 600;
+  font-weight: 700;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -559,6 +775,26 @@ textarea:user-invalid {
 .btn--ghost:hover {
   background: var(--surface-2);
   color: var(--ink);
+}
+
+/* `margin-right: auto` joga o Excluir para a ponta oposta do Confirmar: um
+   clique errado numa acao irreversivel fica bem mais dificil. */
+.btn--danger {
+  margin-right: auto;
+  background: transparent;
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
+.btn--danger:hover {
+  background: color-mix(in srgb, var(--danger) 10%, transparent);
+}
+
+/* Segundo estagio: agora o clique apaga de verdade, e o botao diz isso. */
+.btn--danger.is-arming {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }
 
 .btn[disabled] {
@@ -591,7 +827,7 @@ textarea:user-invalid {
   border-radius: 11px;
   background: transparent;
   color: var(--ink-soft);
-  font-weight: 600;
+  font-weight: 700;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition:
@@ -610,12 +846,16 @@ textarea:user-invalid {
 
 /* --------------------------------------------------------------- detalhes --- */
 
+/* Ancorado ao livro clicado: `left`/`top` sao escritos pelo JS, que mede o
+   cartao e o grampeia dentro da viewport. As dimensoes sao ELASTICAS de
+   proposito — e o que torna o grampo sempre resolvivel, inclusive numa janela
+   baixa ou num celular estreito. */
 .details {
   position: fixed;
-  left: 16px;
-  bottom: max(16px, var(--safe-b));
-  width: min(340px, calc(100vw - 32px));
-  max-height: min(58dvh, 520px);
+  left: 0;
+  top: 0;
+  width: min(340px, calc(100vw - 24px));
+  max-height: calc(100dvh - 24px);
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 16px;
@@ -623,8 +863,49 @@ textarea:user-invalid {
   border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
-  z-index: 35;
-  animation: card-in 0.22s cubic-bezier(0.32, 0.72, 0, 1);
+  z-index: 45; /* acima dos botoes de canto: quem some de vista e o botao */
+  animation: pop-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A origem e escrita pelo JS na ancora, entao o cartao cresce a partir do
+   livro em vez de aparecer do nada. */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+.details__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.details__edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.details__edit:hover {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.details__edit .icon {
+  width: 16px;
+  height: 16px;
 }
 
 @keyframes card-in {
@@ -653,7 +934,7 @@ textarea:user-invalid {
 .details h3 {
   margin: 0 0 2px;
   font-size: 1.02rem;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1.25;
 }
 
@@ -671,19 +952,15 @@ textarea:user-invalid {
 
 .details__stars {
   display: flex;
-  gap: 1px;
+  gap: 2px;
   margin-top: 6px;
-  color: var(--line);
 }
 
-.details__stars svg {
+/* Mesmo slot das estrelas do formulario, so que menor e sem area de clique. */
+.star--sm {
+  --glyph: 16px;
   width: 16px;
   height: 16px;
-  fill: currentColor;
-}
-
-.details__stars .is-on {
-  color: var(--star);
 }
 
 .details__review {
@@ -747,22 +1024,15 @@ textarea:user-invalid {
     transform: none;
   }
 
-  .details {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    max-height: 62dvh;
-    padding: 16px 16px calc(16px + var(--safe-b));
-    border-radius: var(--r-lg) var(--r-lg) 0 0;
-    border-bottom: 0;
-  }
+  /* O cartao de detalhes NAO vira bottom sheet: ele continua ancorado ao toque,
+     so mais estreito. Quem vira sheet e o painel de adicionar, acima. */
 
-  @keyframes card-in {
-    from {
-      opacity: 0;
-      transform: translateY(100%);
-    }
+  /* Com o sheet ocupando a base da tela, os botoes de canto ficariam embaixo
+     dele. Somem com o mesmo tratamento do FAB — sem uma linha de JS. */
+  body:has(.panel.is-open) .corner {
+    transform: scale(0.7);
+    opacity: 0;
+    pointer-events: none;
   }
 
   .row {

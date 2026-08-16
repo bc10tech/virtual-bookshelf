@@ -3,7 +3,8 @@ import { searchDebounced, cancelSearch } from '../data/search.js';
 import { createStars } from './stars.js';
 
 /**
- * O painel expansivel do canto superior direito.
+ * O painel expansivel do canto superior direito, em dois modos: adicionar e
+ * editar.
  *
  * Sao dois elementos, nao um: o FAB (52x52, cantos arredondados) e o painel.
  * Ao abrir, o FAB some e o painel cresce a partir do canto dele — como e so
@@ -15,9 +16,10 @@ import { createStars } from './stars.js';
 
 const $ = (id) => document.getElementById(id);
 
-export function createPanel({ onSubmit }) {
+export function createPanel({ onSubmit, onUpdate, onDelete }) {
   const fab = $('fab');
   const panel = $('panel');
+  const panelTitle = $('panel-title');
   const form = $('book-form');
   const q = $('q');
   const ac = $('ac');
@@ -25,19 +27,27 @@ export function createPanel({ onSubmit }) {
   const searchMsg = $('search-msg');
   const pagesField = $('pages-field');
   const pages = $('pages');
+  const pagesHint = $('pages-hint');
   const start = $('start');
   const end = $('end');
   const review = $('review');
   const formMsg = $('form-msg');
-  const confirm = $('confirm');
+  const confirmBtn = $('confirm');
+  const deleteBtn = $('delete');
 
   const stars = createStars($('stars'));
 
-  /** @type {null | {title,author,coverUrl,pages,olKey,isbn,manual}} */
+  /**
+   * @type {null | {title,author,coverUrl,pages,olKey,isbn,manual,pagesLocked}}
+   */
   let selection = null;
   let options = [];
   let highlighted = -1;
   let isOpen = false;
+  /** Registro sendo editado, ou null no modo adicionar. */
+  let editing = null;
+  /** Excluir armado: o proximo clique apaga de verdade. */
+  let armed = false;
 
   // Ler um livro no futuro nao faz sentido.
   start.max = new Date().toISOString().slice(0, 10);
@@ -62,6 +72,7 @@ export function createPanel({ onSubmit }) {
     fab.setAttribute('aria-expanded', 'false');
     closeList();
     cancelSearch();
+    setMode(null);
     if (returnFocus) fab.focus();
 
     // `inert` so depois da transicao: aplicado antes, o painel sumiria de
@@ -73,7 +84,19 @@ export function createPanel({ onSubmit }) {
     panel.addEventListener('transitionend', done);
   }
 
-  fab.addEventListener('click', open);
+  /** Alterna entre "Adicionar livro" e "Editar livro". */
+  function setMode(rec) {
+    editing = rec;
+    panelTitle.textContent = rec ? 'Editar livro' : 'Adicionar livro';
+    confirmBtn.textContent = rec ? 'Salvar' : 'Confirmar';
+    deleteBtn.hidden = !rec;
+    disarmDelete();
+  }
+
+  fab.addEventListener('click', () => {
+    reset();
+    open();
+  });
   $('panel-close').addEventListener('click', () => close());
   $('cancel').addEventListener('click', () => {
     reset();
@@ -176,7 +199,16 @@ export function createPanel({ onSubmit }) {
     if (!o) return;
 
     selection = o.manual
-      ? { title: o.title.trim(), author: '', coverUrl: null, pages: null, olKey: null, isbn: null, manual: true }
+      ? {
+          title: o.title.trim(),
+          author: '',
+          coverUrl: null,
+          pages: null,
+          olKey: null,
+          isbn: null,
+          manual: true,
+          pagesLocked: false,
+        }
       : {
           title: o.title,
           author: o.author,
@@ -185,23 +217,31 @@ export function createPanel({ onSubmit }) {
           olKey: o.key,
           isbn: o.isbn,
           manual: false,
+          // Se a obra informou a contagem, ela manda: reescrever esse numero a
+          // mao so faria o livro mentir sobre a propria espessura.
+          pagesLocked: o.pages != null,
         };
 
     q.value = selection.title;
     closeList();
     showChosen();
-    (selection.manual ? pages : start).focus();
+    (selection.pagesLocked ? start : pages).focus();
   }
 
   function showChosen() {
     if (!selection) {
       chosen.hidden = true;
-      pagesField.hidden = true;
+      pages.readOnly = false;
+      pagesHint.textContent = 'Define a espessura do livro na estante.';
       return;
     }
-    // Quando a obra nao informa contagem de paginas, o campo manual aparece:
-    // e ela que define a espessura da lombada.
-    pagesField.hidden = !!selection.pages;
+
+    pages.readOnly = selection.pagesLocked;
+    if (selection.pages != null) pages.value = String(selection.pages);
+    pagesHint.textContent = selection.pagesLocked
+      ? 'Informado pela Open Library. Define a espessura do livro na estante.'
+      : 'Define a espessura do livro na estante.';
+
     const bits = [
       selection.author || (selection.manual ? 'cadastro manual' : 'autor desconhecido'),
       selection.pages ? `${selection.pages} páginas` : null,
@@ -214,8 +254,8 @@ export function createPanel({ onSubmit }) {
   q.addEventListener('input', () => {
     selection = null;
     chosen.hidden = true;
-    pagesField.hidden = true;
     searchMsg.hidden = true;
+    pages.readOnly = false;
 
     const term = q.value.trim();
     if (term.length < UI.SEARCH_MIN_CHARS) {
@@ -257,17 +297,61 @@ export function createPanel({ onSubmit }) {
     end.min = start.value || '';
   });
 
-  // ----------------------------------------------------------------- submit ---
+  // ----------------------------------------------------------------- excluir ---
+
+  function disarmDelete() {
+    armed = false;
+    deleteBtn.classList.remove('is-arming');
+    deleteBtn.textContent = 'Excluir';
+  }
+
+  deleteBtn.addEventListener('click', async () => {
+    if (!editing) return;
+
+    // Exclusao e irreversivel: um clique acidental num botao vermelho nao pode
+    // apagar uma leitura registrada. O primeiro clique so arma.
+    if (!armed) {
+      armed = true;
+      deleteBtn.classList.add('is-arming');
+      deleteBtn.textContent = 'Confirmar exclusão';
+      return;
+    }
+
+    deleteBtn.disabled = true;
+    try {
+      await onDelete(editing._id);
+      reset();
+      close({ returnFocus: false });
+    } catch (err) {
+      fail(err.message || 'Não consegui excluir. Tente de novo.');
+      disarmDelete();
+    } finally {
+      deleteBtn.disabled = false;
+    }
+  });
+
+  // Qualquer outro toque no formulario desarma: o estado armado nao fica
+  // esperando um clique distraido mais tarde.
+  panel.addEventListener('focusin', (e) => {
+    if (armed && e.target !== deleteBtn) disarmDelete();
+  });
+  form.addEventListener('input', () => {
+    if (armed) disarmDelete();
+  });
+
+  // ------------------------------------------------------------------ submit ---
 
   function reset() {
     form.reset();
     stars.reset();
     selection = null;
     chosen.hidden = true;
-    pagesField.hidden = true;
     searchMsg.hidden = true;
     formMsg.hidden = true;
+    pages.readOnly = false;
+    pagesHint.textContent = 'Define a espessura do livro na estante.';
     closeList();
+    setMode(null);
   }
 
   function fail(msg, el) {
@@ -276,9 +360,39 @@ export function createPanel({ onSubmit }) {
     el?.focus();
   }
 
+  /** Abre o painel ja preenchido com um registro existente. */
+  function openForEdit(rec) {
+    reset();
+
+    selection = {
+      title: rec.title,
+      author: rec.author || '',
+      coverUrl: rec.coverUrl || null,
+      pages: rec.pages ?? null,
+      olKey: rec.olKey || null,
+      isbn: rec.isbn || null,
+      manual: !rec.olKey,
+      // Livro cadastrado a mao continua editavel; vindo da Open Library, nao.
+      pagesLocked: Boolean(rec.olKey && rec.pages),
+    };
+
+    q.value = rec.title;
+    pages.value = rec.pages ?? '';
+    start.value = rec.startDate ?? '';
+    end.value = rec.endDate ?? '';
+    end.min = rec.startDate ?? '';
+    stars.value = rec.rating ?? 0;
+    review.value = rec.review ?? '';
+
+    showChosen();
+    setMode(rec);
+    open();
+  }
+
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
     formMsg.hidden = true;
+    disarmDelete();
 
     if (!selection) {
       return fail('Escolha um livro na lista ou use a opção de cadastro manual.', q);
@@ -288,12 +402,15 @@ export function createPanel({ onSubmit }) {
       return fail('A data de término não pode ser anterior à de início.', end);
     }
 
-    const manualPages = Number.parseInt(pages.value, 10);
-    const record = {
-      id: uid(),
+    const typed = Number.parseInt(pages.value, 10);
+    const fields = {
       title: selection.title,
       author: selection.author || '',
-      pages: selection.pages ?? (Number.isFinite(manualPages) ? manualPages : BOOK.DEFAULT_PAGES),
+      pages: selection.pagesLocked
+        ? selection.pages
+        : Number.isFinite(typed) && typed > 0
+          ? typed
+          : (selection.pages ?? BOOK.DEFAULT_PAGES),
       coverUrl: selection.coverUrl,
       olKey: selection.olKey,
       isbn: selection.isbn,
@@ -303,17 +420,26 @@ export function createPanel({ onSubmit }) {
       review: review.value.trim(),
     };
 
-    confirm.disabled = true;
+    confirmBtn.disabled = true;
     try {
-      await onSubmit(record);
+      if (editing) await onUpdate(editing._id, fields);
+      else await onSubmit({ id: uid(), ...fields });
       reset();
       close({ returnFocus: false });
     } catch (err) {
       fail(err.message || 'Não consegui salvar. Tente de novo.');
     } finally {
-      confirm.disabled = false;
+      confirmBtn.disabled = false;
     }
   });
 
-  return { open, close, reset, get isOpen() { return isOpen; } };
+  return {
+    open,
+    openForEdit,
+    close,
+    reset,
+    get isOpen() {
+      return isOpen;
+    },
+  };
 }

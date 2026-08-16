@@ -13,7 +13,7 @@ import { caseGroup, invalidate } from './renderer.js';
  * do bookshelf.obj original, que nao faz mais parte do projeto).
  *
  * Todas as caixas de um mesmo material vao para um unico BufferGeometry, entao
- * a estante inteira custa 3 draw calls — com 3 ou com 6 prateleiras. O .obj
+ * a estante inteira custa 3 draw calls — com 3 ou com 5 prateleiras. O .obj
  * original custaria 78, um por objeto.
  *
  * Nao ha UVs: a estante nao tem textura nenhuma (o .mtl so define Kd/Ks/Ns),

@@ -74,17 +74,62 @@ export const bookGeometry = makeBookGeometry();
 // ------------------------------------------------------------------- mesh ---
 
 /**
+ * Cache de material (e, junto com ele, da textura) por livro.
+ *
+ * Sem isto, reordenar a estante redesenharia dezenas de atlas e subiria dezenas
+ * de MB de textura a cada clique — o desenho do canvas e o upload para a GPU
+ * sao o custo real, nao o mesh. Com o cache, reordenar so mexe em posicoes.
+ *
+ * O teto de "uma estante na memoria" continua valendo porque `dropBookAssets`
+ * e chamado para todo livro que sai da estante ativa.
+ *
+ * @type {Map<string, MeshLambertMaterial>}
+ */
+const assets = new Map();
+
+/**
  * Cria o mesh de um livro ja com a capa carregada.
  * @param {object} rec
  * @param {import('./layout.js').Placement} placement
  * @returns {Promise<Mesh>}
  */
 export async function createBookMesh(rec, placement) {
-  const map = await buildCoverTexture(rec);
-  const mesh = new Mesh(bookGeometry, new MeshLambertMaterial({ map }));
+  let material = assets.get(rec._id);
+
+  if (!material) {
+    const map = await buildCoverTexture(rec);
+    // Outra chamada concorrente (createBooksBatched) pode ter chegado primeiro.
+    const raced = assets.get(rec._id);
+    if (raced) {
+      map.dispose();
+      material = raced;
+    } else {
+      material = new MeshLambertMaterial({ map });
+      assets.set(rec._id, material);
+    }
+  }
+
+  const mesh = new Mesh(bookGeometry, material);
   mesh.userData.record = rec;
   applyPlacement(mesh, placement);
   return mesh;
+}
+
+/**
+ * Libera a textura e o material de um livro. Chamar quando ele sai da estante
+ * ativa, e obrigatoriamente quando e editado (a capa pode ter mudado) ou
+ * excluido. Esquecer isto e o vazamento classico deste tipo de aplicacao.
+ */
+export function dropBookAssets(id) {
+  const material = assets.get(id);
+  if (!material) return;
+  material.map?.dispose();
+  material.dispose();
+  assets.delete(id);
+}
+
+export function dropAllBookAssets() {
+  for (const id of [...assets.keys()]) dropBookAssets(id);
 }
 
 /** Posiciona o livro no seu lugar definitivo na prateleira. */
@@ -102,18 +147,16 @@ export function addBook(mesh) {
 }
 
 /**
- * A textura e exclusiva de cada livro e precisa ser liberada; a geometria e
- * compartilhada e NUNCA deve ser descartada. Esquecer o `map.dispose()` e o
- * vazamento classico neste tipo de aplicacao.
+ * Tira o mesh da cena. NAO descarta nada: a geometria e compartilhada por todos
+ * os livros e o material pertence ao cache acima (`dropBookAssets` e quem
+ * libera). Separar as duas coisas e o que permite reordenar sem redesenhar.
  */
-export function disposeBookMesh(mesh) {
+export function detachBookMesh(mesh) {
   booksGroup.remove(mesh);
-  mesh.material.map?.dispose();
-  mesh.material.dispose();
 }
 
 export function clearBooks() {
-  for (const m of [...booksGroup.children]) disposeBookMesh(m);
+  for (const m of [...booksGroup.children]) detachBookMesh(m);
   invalidate();
 }
 
