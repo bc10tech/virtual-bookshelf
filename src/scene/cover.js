@@ -51,23 +51,139 @@ export function ensureFonts(text = '') {
 // ---------------------------------------------------------------- imagem ---
 
 /**
+ * Disjuntor do host de capas — tres estados, sem nenhum timer.
+ *
+ *   FECHADO    tudo passa.
+ *   ABERTO     nada passa; cada capa desiste na hora e cai na procedural.
+ *   MEIO-ABERTO  passada a espera, UMA capa vira sonda. Se ela vier, o
+ *                disjuntor fecha e a vida volta ao normal; se estourar, abre
+ *                de novo e o relogio recomeca.
+ *
+ * O relogio e o proprio pedido de capa: nao ha `setInterval` sondando o host em
+ * segundo plano. Isso e deliberado — a pagina parada nao faz nem um frame nem
+ * uma requisicao, e um disjuntor que fica cutucando a rede sozinho contradiria
+ * isso. O preco esta comentado no `coversRecovered`.
+ *
+ * As duas regras, e as duas custaram um teste para chegar nesta forma:
+ *
+ *   SO TIMEOUT ABRE. `onerror` nao abre porque, com `?default=false`, obra sem
+ *   capa devolve 404 — e num acervo de livros obscuros isso e o caso NORMAL.
+ *   Conta-lo abriria o disjuntor numa estante saudavel e apagaria as capas que
+ *   existem. O disjuntor defende contra ESPERA, entao so espera o abre.
+ *
+ *   SO IMAGEM FECHA. `onerror` tambem nao fecha, e este e o lado que eu errei
+ *   primeiro: e tentador tratar erro rapido como "o host respondeu, logo esta
+ *   de pe", mas num host inalcancavel o browser desiste de esperar e passa a
+ *   errar rapido justamente por estar fora. Fechando ali, cada erro reabria a
+ *   porta e o livro seguinte pagava outro timeout — 11 capas custavam 13 s em
+ *   vez dos 8 s de uma unica rodada. `onerror` e inconclusivo e nao mexe em
+ *   nada; so uma imagem de verdade prova que o host serve.
+ */
+const breaker = { failures: 0, openedAt: 0, probing: false };
+
+/**
+ * Sentinela para "nao obtive resposta" — recusa do disjuntor OU espera
+ * estourada. Os dois casos sao a mesma coisa para quem le: a capa procedural e
+ * PROVISORIA, e o livro deve ser redesenhado quando o host voltar.
+ *
+ * O que ela distingue e o desfecho DEFINITIVO, que devolve `null`: `onerror`
+ * com `?default=false` quer dizer que a obra nao tem capa mesmo, e ai a
+ * procedural e a resposta final — redesenhar seria trabalho a toa para sempre.
+ */
+const SEM_RESPOSTA = Symbol('sem resposta do host');
+
+const breakerIsOpen = () => breaker.failures >= COVER.BREAKER_FAILURES;
+
+/** `false` = barrado. Senao devolve por onde passou, que muda o que um timeout significa. */
+function breakerAllows() {
+  if (!breakerIsOpen()) return 'normal';
+  if (performance.now() - breaker.openedAt < COVER.BREAKER_COOLDOWN_MS) return false;
+  if (breaker.probing) return false; // meio-aberto: uma sonda por vez, nao seis
+  breaker.probing = true;
+  return 'sonda';
+}
+
+function breakerRecordTimeout(foiSonda) {
+  const eraAberto = breakerIsOpen();
+  breaker.probing = false;
+  breaker.failures++;
+
+  // A hora e carimbada na TRANSICAO (fechado -> aberto) e quando uma SONDA
+  // estoura (ai a espera tem mesmo que recomecar). Nunca a cada timeout: as
+  // chamadas que ja estavam em voo quando ele abriu — sao seis workers —
+  // empurrariam a espera para frente de graca, e a primeira sonda demoraria
+  // um multiplo do que esta escrito no config.
+  if (!eraAberto || foiSonda) breaker.openedAt = performance.now();
+}
+
+/**
+ * Uma imagem de verdade chegou: o host serve. E a UNICA prova que fecha o
+ * disjuntor. Zera sempre, nao so quando estava aberto — falhas isoladas ao
+ * longo de uma sessao longa nao devem se somar ate abrir sozinhas.
+ */
+function breakerRecordSuccess() {
+  const eraAberto = breakerIsOpen();
+  breaker.probing = false;
+  breaker.failures = 0;
+  if (eraAberto) flushRecovered();
+}
+
+/**
+ * `onerror` — que e tudo o que a Image API conta. Pode ser o 404 de uma obra
+ * sem capa (caso normal, host de pe) ou uma conexao que morreu (host fora). Nao
+ * da para distinguir os dois, entao nao conta para nenhum lado: nao abre o
+ * disjuntor e, principalmente, NAO O FECHA.
+ *
+ * Fechar aqui foi a primeira versao e estava errado. Num host inalcancavel o
+ * browser para de esperar e passa a errar rapido, entao cada erro reabria a
+ * porta e o livro seguinte pagava mais um timeout inteiro: 11 capas viravam 13
+ * s em vez dos 8 s de uma unica rodada.
+ */
+function breakerRecordInconclusive(foiSonda) {
+  breaker.probing = false;
+  // Sonda inconclusiva gasta a vez e reinicia a espera. Sem isto, um acervo
+  // cheio de obras sem capa viraria uma enxurrada de sondas.
+  if (foiSonda) breaker.openedAt = performance.now();
+}
+
+/**
  * `crossOrigin = 'anonymous'` e obrigatorio: a Open Library manda
  * `Access-Control-Allow-Origin: *`, mas sem o atributo o browser ainda assim
  * contamina o canvas, e tanto getImageData quanto o upload para o WebGL passam
  * a lancar SecurityError — apagando todas as capas silenciosamente.
  */
-function loadImage(url, timeoutMs = 8000) {
+function loadImage(url, timeoutMs = COVER.LOAD_TIMEOUT_MS) {
+  const via = breakerAllows();
+  if (!via) return Promise.resolve(SEM_RESPOSTA);
+
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = 'anonymous';
     img.decoding = 'async';
 
+    // A promessa so resolve uma vez, mas os EFEITOS COLATERAIS aqui nao sao
+    // idempotentes — e foi por isso que a primeira versao deste disjuntor nunca
+    // conseguia ficar aberto. Duas coisas disparam `onerror` DEPOIS do timeout:
+    // o `img.src = ''` que aborta o download, e o proprio erro de rede do
+    // browser, que num host inalcancavel chega la pelos 21 s. Qualquer uma das
+    // duas chamava `breakerRecordResponse()` e zerava a falha recem-anotada.
+    let resolvido = false;
+
     const timer = setTimeout(() => {
+      if (resolvido) return;
+      resolvido = true;
+      img.onload = img.onerror = null; // antes do src, senao o abort volta aqui
       img.src = '';
-      resolve(null);
+      breakerRecordTimeout(via === 'sonda');
+      resolve(SEM_RESPOSTA); // provisorio, igual a recusa: nao sabemos se ha capa
     }, timeoutMs);
+
     const done = (v) => {
+      if (resolvido) return;
+      resolvido = true;
       clearTimeout(timer);
+      if (v) breakerRecordSuccess();
+      else breakerRecordInconclusive(via === 'sonda');
       resolve(v);
     };
 
@@ -75,6 +191,41 @@ function loadImage(url, timeoutMs = 8000) {
     img.onerror = () => done(null);
     img.src = url;
   });
+}
+
+// --------------------------------------------------------------- recuperacao ---
+
+/**
+ * Livros cuja capa procedural e PROVISORIA: o host nao respondeu, por recusa do
+ * disjuntor ou por espera estourada. So esses precisam ser redesenhados quando
+ * ele voltar — quem simplesmente nao tem capa nunca entra aqui, e e essa
+ * distincao que impede a volta de reprocessar a estante inteira.
+ */
+const refusedIds = new Set();
+let onRecoveredCb = null;
+
+/**
+ * Avisado quando o disjuntor fecha, com os ids que perderam a capa enquanto ele
+ * esteve aberto. O `stage.js` usa isso para largar o atlas desses livros e
+ * deixar o `syncScene` redesenha-los com a capa de verdade.
+ *
+ * O gatilho e o fechamento, que por sua vez depende de alguem PEDIR uma capa —
+ * abrir o painel, trocar de estante, cadastrar um livro, recarregar. Uma aba
+ * parada nao se cura sozinha, porque curar-se sozinha exigiria um poll de
+ * fundo. Recarregar sempre resolve.
+ */
+export const setOnCoversRecovered = (cb) => {
+  onRecoveredCb = cb;
+};
+
+function flushRecovered() {
+  if (!refusedIds.size || !onRecoveredCb) return;
+  const ids = [...refusedIds];
+  refusedIds.clear();
+  // Fora do turno atual de proposito: este ponto e alcancado de DENTRO de um
+  // `createBooksBatched`, e avisar dali faria o ouvinte reentrar no `syncScene`
+  // que ainda esta montando meshes.
+  setTimeout(() => onRecoveredCb(ids), 0);
 }
 
 /** Cor media da capa: o proprio browser faz a reducao ao desenhar em 1x1. */
@@ -233,7 +384,16 @@ export async function buildCoverTexture(rec) {
   ctx.fillStyle = PAGES_CSS;
   ctx.fillRect(0, 0, size, size);
 
-  const img = rec.coverUrl ? await loadImage(rec.coverUrl) : null;
+  // Tres desfechos, e distingui-los e o que torna a volta barata: veio a capa;
+  // a obra nao tem capa e a procedural e a resposta DEFINITIVA; ou o host nao
+  // respondeu (recusa do disjuntor ou espera estourada) e a procedural e
+  // PROVISORIA — este livro entra na lista de quem deve ser redesenhado quando
+  // o host voltar.
+  const carregada = rec.coverUrl ? await loadImage(rec.coverUrl) : null;
+  if (carregada === SEM_RESPOSTA) refusedIds.add(rec._id);
+  else refusedIds.delete(rec._id);
+
+  const img = carregada === SEM_RESPOSTA ? null : carregada;
   const sampled = img ? dominantColor(img) : null;
 
   // Sem capa: escolhe uma das 4 cores de capa do .mtl original pela EDICAO (nao

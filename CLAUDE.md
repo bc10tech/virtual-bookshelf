@@ -73,6 +73,12 @@ prateleiras, o que o arquivo não fazia.
   (senão o canvas fica contaminado e o upload pro WebGL lança
   `SecurityError`), e a URL precisa de `?default=false` (senão uma obra sem
   capa devolve 200 com um placeholder em branco em vez de 404).
+- **O disjuntor de capas tem duas regras, e as duas são contraintuitivas**
+  (`cover.js`): **só timeout abre** — `onerror` é o 404 normal de obra sem capa,
+  e contá-lo mataria as capas de uma estante saudável; e **só imagem fecha** —
+  num host fora do ar o browser passa a errar *rápido*, então tratar erro rápido
+  como "host de pé" reabre a porta e cada livro paga outro timeout. Se aparecer
+  capa procedural onde devia haver capa real, é aqui que se olha primeiro.
 - **Fonte é assada na textura do canvas.** `ensureFonts()` precisa terminar
   antes do primeiro atlas ser desenhado, senão o fallback do sistema fica
   gravado permanentemente na lombada.

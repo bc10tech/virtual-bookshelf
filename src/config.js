@@ -205,6 +205,31 @@ export const COVER = {
   INSET: 0.5, // meio pixel de recuo evita puxar a cor da celula vizinha
   MAX_ANISOTROPY: 4,
 
+  // Teto para UMA capa. Estava cravado no `cover.js`; veio para ca junto com o
+  // disjuntor, que so faz sentido lido ao lado dele.
+  LOAD_TIMEOUT_MS: 8000,
+
+  /**
+   * Disjuntor do host de capas. Quando `covers.openlibrary.org` fica
+   * inalcancavel, cada capa gasta o timeout inteiro e uma estante de 66 livros
+   * levava 16 s para aparecer. Depois de FAILURES esperas estouradas, as capas
+   * seguintes desistem na hora e caem na capa procedural.
+   *
+   * COOLDOWN_MS e quanto o disjuntor fica aberto antes de deixar UMA capa
+   * tentar de novo. 30 s e curto o bastante para a volta ser percebida na mesma
+   * sessao, e longo o bastante para nao voltar a pagar o timeout a cada livro.
+   *
+   * FAILURES = 1, e nao 2, porque as capas sao baixadas por SEIS workers em
+   * paralelo (`createBooksBatched`): quando a primeira espera estoura, as
+   * outras cinco ja estao condenadas ha oito segundos, entao a segunda falha
+   * nao acrescenta informacao nenhuma. Medido: com 2, um retardatario escapava
+   * na fresta de milissegundos entre o primeiro e o segundo timeout e sozinho
+   * custava mais 6 s — 14 s de estante em vez de 8 s. E um falso positivo sai
+   * barato porque a sonda o desfaz em 30 s e as capas voltam sozinhas.
+   */
+  BREAKER_FAILURES: 1,
+  BREAKER_COOLDOWN_MS: 30000,
+
   CELL_FRONT: { x: 0, y: 0, w: 192, h: 256 }, // capa
   CELL_SPINE: { x: 196, y: 0, w: 32, h: 256 }, // lombada (4 px de respiro da capa)
 

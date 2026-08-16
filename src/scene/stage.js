@@ -13,6 +13,7 @@ import {
   dropBookAssets,
   dropAllBookAssets,
 } from './book.js';
+import { setOnCoversRecovered } from './cover.js';
 import { sortRecords, loadSort, saveSort } from '../data/sort.js';
 import {
   tween,
@@ -229,6 +230,26 @@ export async function initStage(initial) {
     dropAllBookAssets();
     builtShelves = 0;
     syncScene().catch((err) => console.error('[stage] falha ao restaurar', err));
+  });
+
+  // O host de capas voltou depois de o disjuntor ter aberto. Quem ficou com a
+  // capa procedural POR ISSO — e so quem — larga o atlas, e o syncScene o
+  // redesenha com a capa de verdade. Livro que simplesmente nao tem capa nunca
+  // entra nessa lista, entao a volta nao reprocessa a estante inteira.
+  setOnCoversRecovered((ids) => {
+    for (const id of ids) {
+      // Ainda em montagem: nao mexer. Ele esta sendo desenhado agora, com o
+      // disjuntor ja fechado, entao vai sair com a capa certa sozinho.
+      if (pendingIds.has(id)) continue;
+
+      const mesh = meshById.get(id);
+      if (!mesh) continue;
+      mesh.userData.reflow?.cancel();
+      detachBookMesh(mesh);
+      meshById.delete(id);
+      dropBookAssets(id);
+    }
+    syncScene().catch((err) => console.error('[stage] falha ao recarregar capas', err));
   });
 
   await syncScene();
