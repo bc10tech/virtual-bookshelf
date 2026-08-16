@@ -8,8 +8,13 @@ import { editionKey } from './layout.js';
  * 1 draw call.
  */
 
-// Neuton nao tem peso 600 — o titulo/lombada usam 700.
-const FONT = 'Neuton';
+/**
+ * A lombada e a capa sao o LIVRO, entao usam a serifada — titulo em 700, autor
+ * em 400. Manter o autor tambem em Bitter (e nao na sans da interface) e o que
+ * deixa este arquivo com uma unica constante de familia: os 5 pontos que montam
+ * `ctx.font` e os 2 descritores de `ensureFonts` seguem todos iguais.
+ */
+const FONT = 'Bitter';
 const W_BOLD = 700;
 const W_REG = 400;
 const PAGES_CSS = kdToCss(KD.bookPages);

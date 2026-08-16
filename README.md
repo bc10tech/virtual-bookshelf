@@ -52,7 +52,7 @@ src/
   scene/            three.js: renderer, câmera, estante, livros, capas, tweens
   data/             acesso à API, busca na Open Library, ordenação
   ui/               painel, estrelas, paginador, cartão, menu de ordem, tema
-public/fonts/       Neuton (SIL OFL) auto-hospedada
+public/fonts/       Bitter e Karla (SIL OFL), variáveis e auto-hospedadas
 ```
 
 **Não há nenhum arquivo de modelo 3D.** A estante nasceu de um `bookshelf.obj`
@@ -67,7 +67,24 @@ importava neles virou código.
 
 ## Decisões de peso
 
-O site inteiro carrega em **~144 KB gzip** de código mais ~38 KB de fonte, em 5
+## Tipografia
+
+Duas famílias, com uma divisão de responsabilidade estrita:
+
+- **Karla** (sem serifa) governa a **interface** — rótulos, campos, botões,
+  menus. É a única família declarada no `body`, e todo o resto herda dela.
+- **Bitter** (serifada) aparece só onde o conteúdo **é o livro**: a lombada e a
+  capa desenhadas no canvas, a caixa de **Review** (para o texto parecer uma
+  página sendo escrita, não mais um campo de formulário) e o **cartão de
+  detalhes** inteiro. A única exceção dentro do cartão é o botão "Editar", que
+  volta para a sans por ser controle de interface.
+
+As duas são **fontes variáveis**: o descritor `font-weight: 400 700` é um
+intervalo, e um arquivo por família cobre os dois pesos e todos os
+intermediários. São 2 arquivos e 58,4 KB, contra 4 arquivos e 63,6 KB se fossem
+instâncias estáticas.
+
+O site inteiro carrega em **~144 KB gzip** de código mais 58 KB de fonte, em 5
 requisições. As escolhas que sustentam isso:
 
 | | |
@@ -80,6 +97,7 @@ requisições. As escolhas que sustentam isso:
 | **Render sob demanda** | parado, não existe `requestAnimationFrame` pendente: zero CPU, zero GPU, zero bateria. |
 | **Uma estante por vez** | trocar de estante no paginador descarta as texturas da anterior, então a memória de GPU não cresce com o acervo. |
 | **Tema por tokens CSS** | a cena só troca a cor de fundo; materiais e luzes são os mesmos objetos nos dois modos. |
+| **Fontes variáveis** | 2 arquivos em vez de 4, e o eixo de peso 400–700 inteiro sai de graça. |
 | **Sem GSAP, sem framework, sem datepicker, sem icon font** | um tween de 50 linhas, ~10 elementos no DOM, `<input type="date">` nativo e `<symbol>` SVG inline. |
 | **Fonte auto-hospedada** | o cache do browser é particionado por site desde 2020, então o CDN do Google só custaria 2 handshakes e um CSS bloqueante. |
 

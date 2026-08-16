@@ -1,48 +1,52 @@
-/* ------------------------------------------------------------------ fonte ---
-   Neuton auto-hospedada. O cache do browser e particionado por site desde 2020,
-   entao o CDN do Google nao traria cache compartilhado — so 2 handshakes extras
-   e um CSS que bloqueia a renderizacao (~150-250 ms de FCP em 4G).
-   O subset `latin-ext` so e baixado se algum titulo pedir um glifo dele.
+/* ------------------------------------------------------------------ fontes ---
+   Bitter (serifada) e Karla (sem serifa), auto-hospedadas. O cache do browser e
+   particionado por site desde 2020, entao o CDN do Google nao traria cache
+   compartilhado — so 2 handshakes extras e um CSS que bloqueia a renderizacao
+   (~150-250 ms de FCP em 4G).
 
-   Neuton nao tem peso 600: os pesos disponiveis sao 200/300/400/700/800. Onde o
-   projeto pedia 600 (titulos, rotulos, lombadas), o peso agora e 700. */
+   As duas sao fontes VARIAVEIS: o descritor `font-weight: 400 700` e um
+   intervalo, e um unico arquivo por familia cobre os dois pesos (e todos os
+   intermediarios). Sao 2 arquivos de 58,4 KB no caminho comum, contra 4 de
+   63,6 KB se fossem instancias estaticas — menos peso e metade das requisicoes.
+
+   O subset `latin-ext` so e baixado se algum titulo pedir um glifo dele. */
 
 @font-face {
-  font-family: 'Neuton';
+  font-family: 'Bitter';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('/fonts/neuton-400-latin.woff2') format('woff2');
+  src: url('/fonts/bitter-400-700-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Neuton';
+  font-family: 'Bitter';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('/fonts/neuton-400-latin-ext.woff2') format('woff2');
+  src: url('/fonts/bitter-400-700-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: 'Neuton';
+  font-family: 'Karla';
   font-style: normal;
-  font-weight: 700;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('/fonts/neuton-700-latin.woff2') format('woff2');
+  src: url('/fonts/karla-400-700-latin.woff2') format('woff2');
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
     U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
     U+2212, U+2215, U+FEFF, U+FFFD;
 }
 @font-face {
-  font-family: 'Neuton';
+  font-family: 'Karla';
   font-style: normal;
-  font-weight: 700;
+  font-weight: 400 700;
   font-display: swap;
-  src: url('/fonts/neuton-700-latin-ext.woff2') format('woff2');
+  src: url('/fonts/karla-400-700-latin-ext.woff2') format('woff2');
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF,
     U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020,
     U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
@@ -54,6 +58,11 @@
    O acento e o nogueira da propria estante, para interface e cena parecerem o
    mesmo objeto. */
 :root {
+  /* Karla governa a interface; Bitter aparece so onde o conteudo E o livro:
+     lombada/capa no canvas, a caixa de review e o cartao de detalhes. */
+  --font-sans: 'Karla', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-serif: 'Bitter', Georgia, 'Times New Roman', serif;
+
   --bg: #ffffe3;
   --surface: #fffffa;
   --surface-2: #f6f3da;
@@ -121,6 +130,41 @@
   display: none !important;
 }
 
+/* ------------------------------------------------------------- animacoes ---
+   Ficam aqui, junto do reset, porque sao compartilhadas por elementos de
+   secoes diferentes do arquivo.
+
+   Todas animam so a ENTRADA. Elementos alternados pelo atributo `hidden` nao
+   podem usar `transition` (transicao nao roda em mudanca de `display`), entao a
+   aparicao e feita por `animation`, que dispara quando o elemento passa a ser
+   exibido. Animar a saida exigiria adiar o `hidden` ate um `animationend`, com
+   corrida se o usuario clicar rapido. */
+
+/* Toast: sobe reto da borda de baixo. */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+}
+
+/* Cartao de detalhes: cresce a partir do livro clicado (a origem e escrita pelo
+   JS na ancora, em details.js). */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+/* Pilha do canto inferior: cresce a partir do botao que a revelou. */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86) translateY(8px);
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -132,10 +176,13 @@ body {
   min-height: 100dvh;
   background: var(--bg);
   color: var(--ink);
-  font-family: 'Neuton', Georgia, 'Times New Roman', serif;
-  /* Neuton tem x-height menor que a Proza Libre: no mesmo tamanho em px ela le
-     visivelmente menor, entao a base sobe 1 px para compensar. */
-  font-size: 17px;
+  /* Karla e o padrao: como esta e a UNICA regra do arquivo que define familia,
+     toda a interface herda a sem-serifa daqui, e a serifada so precisa ser
+     declarada nos poucos lugares que devem parecer livro. */
+  font-family: var(--font-sans);
+  /* Volta aos 16 px: os +1 px existiam para compensar o x-height pequeno da
+     Neuton, e a Karla tem proporcoes normais. */
+  font-size: 16px;
   line-height: 1.45;
   overflow: hidden;
   overscroll-behavior: none; /* sem puxar-para-recarregar por cima da cena */
@@ -281,17 +328,26 @@ body {
   background: var(--surface);
   color: var(--ink);
   box-shadow: var(--shadow-sm);
-  font-weight: 700;
+  font-weight: 600;
   font-size: 0.9rem;
   cursor: pointer;
-  transition:
-    transform 0.14s ease,
-    opacity 0.14s ease,
-    background-color 0.14s ease;
+  /* So `background-color`: este botao e alternado pelo atributo `hidden`, e
+     transicao nao roda em mudanca de `display` — transicionar transform/opacity
+     aqui era codigo morto. A aparicao vem da `animation` abaixo. */
+  transition: background-color 0.14s ease;
 }
 
 .pill:hover {
   background: var(--surface-2);
+}
+
+/* O botao revelado e o popover crescem a partir do botao de canto, com a mesma
+   linguagem de escala do FAB e do painel. `transform-origin` no canto inferior
+   esquerdo e o que faz a animacao apontar para a origem do clique. */
+.corner--left .pill,
+.corner--left .sortmenu {
+  transform-origin: 0 100%;
+  animation: rise-in 0.18s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 /* ------------------------------------------------------- menu de ordenacao --- */
@@ -306,7 +362,7 @@ body {
   border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
-  animation: card-in 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+  /* A animacao vem da regra `.corner--left .sortmenu` acima. */
 }
 
 .sortmenu__item {
@@ -440,7 +496,7 @@ body {
 label,
 legend {
   font-size: 0.82rem;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-soft);
   padding: 0;
 }
@@ -489,6 +545,15 @@ textarea {
   resize: vertical;
   min-height: 96px;
   line-height: 1.5;
+}
+
+/* A review e o unico campo do formulario que e TEXTO, nao dado: serifada e
+   entrelinha generosa para parecer uma pagina de livro sendo escrita, em vez de
+   mais uma caixa de formulario. Vale tambem para o placeholder. */
+#review {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  line-height: 1.65;
 }
 
 input:focus-visible,
@@ -599,7 +664,7 @@ textarea:user-invalid {
 .ac__title {
   display: block;
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -617,7 +682,7 @@ textarea:user-invalid {
 .ac__manual {
   color: var(--accent);
   font-size: 0.85rem;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 /* --------------------------------------------------------------- estrelas --- */
@@ -712,7 +777,7 @@ textarea:user-invalid {
 
 .stars__value {
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
+  font-weight: 600;
   color: var(--ink-soft);
   min-width: 2ch;
 }
@@ -750,7 +815,7 @@ textarea:user-invalid {
   padding: 0 18px;
   border: 1px solid transparent;
   border-radius: var(--r-sm);
-  font-weight: 700;
+  font-weight: 600;
   cursor: pointer;
   transition:
     background-color 0.15s ease,
@@ -827,7 +892,7 @@ textarea:user-invalid {
   border-radius: 11px;
   background: transparent;
   color: var(--ink-soft);
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   cursor: pointer;
   transition:
@@ -865,15 +930,11 @@ textarea:user-invalid {
   box-shadow: var(--shadow-lg);
   z-index: 45; /* acima dos botoes de canto: quem some de vista e o botao */
   animation: pop-in 0.2s cubic-bezier(0.32, 0.72, 0, 1);
-}
 
-/* A origem e escrita pelo JS na ancora, entao o cartao cresce a partir do
-   livro em vez de aparecer do nada. */
-@keyframes pop-in {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
+  /* O cartao INTEIRO e serifado: ele e a pagina do livro que voce ja leu, nao um
+     painel de interface. Titulo, autor, datas e review herdam daqui — a unica
+     excecao e o botao Editar, logo abaixo. */
+  font-family: var(--font-serif);
 }
 
 .details__actions {
@@ -893,7 +954,10 @@ textarea:user-invalid {
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
-  font-weight: 700;
+  /* DEPOIS do `font: inherit`, que puxaria a serifada do cartao: este botao e
+     controle de interface, nao conteudo do livro. */
+  font-family: var(--font-sans);
+  font-weight: 600;
   font-size: 0.86rem;
   cursor: pointer;
 }
@@ -906,13 +970,6 @@ textarea:user-invalid {
 .details__edit .icon {
   width: 16px;
   height: 16px;
-}
-
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
 }
 
 .details__top {

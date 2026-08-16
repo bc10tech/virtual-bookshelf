@@ -16,7 +16,7 @@ import { createStars } from './stars.js';
 
 const $ = (id) => document.getElementById(id);
 
-export function createPanel({ onSubmit, onUpdate, onDelete }) {
+export function createPanel({ onSubmit, onUpdate, onDelete, onOpen }) {
   const fab = $('fab');
   const panel = $('panel');
   const panelTitle = $('panel-title');
@@ -56,6 +56,10 @@ export function createPanel({ onSubmit, onUpdate, onDelete }) {
 
   function open() {
     if (isOpen) return;
+    // O cartao de detalhes fica ACIMA do painel (z-index 45 contra 40, para nao
+    // ser encoberto pelos botoes de canto), entao ele precisa sair de cena antes
+    // — senao cobriria o formulario.
+    onOpen?.();
     isOpen = true;
     panel.inert = false;
     panel.classList.add('is-open');

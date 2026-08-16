@@ -214,12 +214,13 @@ export const COVER = {
   CELL_BACK: { x: 232, y: 0, w: 12, h: 16 }, // contracapa
   CELL_PAGES: { x: 244, y: 0, w: 12, h: 16 }, // miolo
 
-  // Neuton e mais estreita e tem x-height menor que a Proza Libre: os mesmos
-  // tamanhos liam menores na lombada, entao subiram 1-2 px.
-  SPINE_TITLE_PX: 19,
-  SPINE_AUTHOR_PX: 13,
-  FRONT_TITLE_PX: 24,
-  FRONT_AUTHOR_PX: 14,
+  // A Bitter e o oposto da Neuton: slab, larga e de x-height grande. Nos mesmos
+  // tamanhos ela lia grande demais e truncava os titulos muito antes na lombada,
+  // que so tem 32 px de celula — entao os valores desceram.
+  SPINE_TITLE_PX: 16,
+  SPINE_AUTHOR_PX: 11,
+  FRONT_TITLE_PX: 20,
+  FRONT_AUTHOR_PX: 12,
   FRONT_TITLE_LINES: 4,
 };
 

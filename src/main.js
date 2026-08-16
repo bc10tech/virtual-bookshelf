@@ -97,6 +97,13 @@ async function boot() {
   // O retorno do painel e guardado: e por ele que o botao "Editar" do cartao
   // reabre o formulario num registro que ja existe.
   const panel = createPanel({
+    // Abrir o formulario limpa a selecao: o cartao de detalhes some junto com o
+    // livro levantado, e o menu de ordenacao se recolhe.
+    onOpen() {
+      deselect();
+      sortMenu.close();
+    },
+
     async onSubmit(record) {
       // Persiste antes de animar: se o servidor recusar, nada aparece na
       // estante e a mensagem de erro fica no proprio formulario.
