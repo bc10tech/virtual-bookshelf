@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#F2EDE4" />
+    <meta name="description" content="Sua estante de livros virtual em 3D." />
+    <title>Estante Virtual</title>
+
+    <link
+      rel="preload"
+      href="/fonts/proza-libre-400-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <link
+      rel="preload"
+      href="/fonts/proza-libre-600-latin.woff2"
+      as="font"
+      type="font/woff2"
+      crossorigin
+    />
+    <!-- Handshake antecipado: a primeira capa chega bem mais rapido. -->
+    <link rel="preconnect" href="https://covers.openlibrary.org" crossorigin />
+  </head>
+
+  <body>
+    <div class="stage">
+      <canvas id="scene" aria-label="Estante de livros em 3D" role="img"></canvas>
+    </div>
+    <div class="vignette" aria-hidden="true"></div>
+
+    <!-- Paginador de estantes: so aparece quando existe mais de uma. -->
+    <nav id="pager" class="pager" role="tablist" aria-label="Estantes" hidden></nav>
+
+    <button
+      id="fab"
+      class="fab"
+      type="button"
+      aria-expanded="false"
+      aria-controls="panel"
+      aria-label="Adicionar livro"
+      title="Adicionar livro"
+    >
+      <svg class="icon" aria-hidden="true"><use href="#i-plus" /></svg>
+    </button>
+
+    <div
+      id="panel"
+      class="panel"
+      role="dialog"
+      aria-labelledby="panel-title"
+      aria-modal="false"
+    >
+      <header class="panel__head">
+        <h2 id="panel-title">Adicionar livro</h2>
+        <button id="panel-close" class="icon-btn" type="button" aria-label="Fechar">
+          <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg>
+        </button>
+      </header>
+
+      <form id="book-form" class="form" novalidate>
+        <div class="field">
+          <label for="q">Livro</label>
+          <div class="combo">
+            <input
+              id="q"
+              type="search"
+              role="combobox"
+              autocomplete="off"
+              aria-autocomplete="list"
+              aria-expanded="false"
+              aria-controls="ac"
+              placeholder="Título ou autor"
+              required
+            />
+            <ul id="ac" class="ac" role="listbox" aria-label="Resultados" hidden></ul>
+          </div>
+          <p id="chosen" class="chosen" hidden></p>
+          <p id="search-msg" class="msg" role="status" hidden></p>
+        </div>
+
+        <!-- So aparece na entrada manual: sem a Open Library nao ha contagem de
+             paginas, e e ela que define a espessura da lombada. -->
+        <div class="field" id="pages-field" hidden>
+          <label for="pages">Páginas</label>
+          <input id="pages" type="number" inputmode="numeric" min="1" max="5000" placeholder="300" />
+          <p class="hint">Define a espessura do livro na estante.</p>
+        </div>
+
+        <div class="row">
+          <div class="field">
+            <label for="start">Comecei em</label>
+            <input id="start" type="date" required />
+          </div>
+          <div class="field">
+            <label for="end">Terminei em</label>
+            <input id="end" type="date" />
+            <p class="hint">Deixe vazio se ainda está lendo.</p>
+          </div>
+        </div>
+
+        <fieldset class="field stars-field">
+          <legend>Nota</legend>
+          <div class="stars" id="stars"></div>
+        </fieldset>
+
+        <div class="field">
+          <label for="review">Review</label>
+          <textarea
+            id="review"
+            rows="5"
+            maxlength="2000"
+            placeholder="O que você achou?"
+          ></textarea>
+        </div>
+
+        <p id="form-msg" class="msg msg--error" role="alert" hidden></p>
+
+        <div class="actions">
+          <button type="button" class="btn btn--ghost" id="cancel">Cancelar</button>
+          <button type="submit" class="btn btn--primary" id="confirm">Confirmar</button>
+        </div>
+      </form>
+    </div>
+
+    <aside id="details" class="details" aria-live="off" hidden></aside>
+
+    <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+
+    <noscript>
+      <p class="fallback">Esta estante precisa de JavaScript para ser desenhada.</p>
+    </noscript>
+
+    <!-- Icones inline: ~600 bytes, nitidos em qualquer tamanho, zero requisicoes. -->
+    <svg class="sprite" aria-hidden="true" focusable="false">
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path
+          d="M12 5v14M5 12h14"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-close" viewBox="0 0 24 24">
+        <path
+          d="M6 6l12 12M18 6L6 18"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </symbol>
+      <symbol id="i-star" viewBox="0 0 24 24">
+        <path
+          d="M12 2.6l2.9 5.9 6.5.9-4.7 4.6 1.1 6.4-5.8-3-5.8 3 1.1-6.4L2.6 9.4l6.5-.9z"
+        />
+      </symbol>
+    </svg>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

@@ -1,0 +1,18 @@
+services:
+  mongo:
+    image: mongo:7
+    container_name: virtual-bookshelf-mongo
+    restart: unless-stopped
+    ports:
+      # Preso ao loopback: o banco de desenvolvimento nao fica exposto na rede local.
+      - '127.0.0.1:27017:27017'
+    volumes:
+      - vb-data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', 'db.adminCommand("ping")']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  vb-data:

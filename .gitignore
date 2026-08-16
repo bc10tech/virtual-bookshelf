@@ -1,0 +1,13 @@
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+
+# Roteiro pessoal para levar o projeto a producao — nao versionado a pedido.
+steps.md
+
+.DS_Store
+Thumbs.db
+*.log
+.vite/
