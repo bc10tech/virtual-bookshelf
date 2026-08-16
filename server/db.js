@@ -1,7 +1,22 @@
 import { MongoClient } from 'mongodb';
+import { INDEXES, COLLECTION } from './schema.js';
 
 const URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';
 const DB_NAME = process.env.MONGODB_DB || 'virtual_bookshelf';
+
+/**
+ * Um predicado, quatro decisoes. O container local e um banco gerenciado
+ * respondem de formas diferentes o bastante para que os mesmos numeros nao
+ * sirvam aos dois, e espalhar quatro `if (producao)` pelo arquivo seria quatro
+ * chances de um deles discordar dos outros.
+ *
+ * Repara que o host e extraido em vez de procurado na string inteira: uma senha
+ * que por acaso contenha "localhost" nao pode decidir isto.
+ */
+const host = URI.replace(/^mongodb(\+srv)?:\/\//, '')
+  .replace(/^[^@/]*@/, '')
+  .split(/[/?,]/)[0];
+export const isLocal = /^(127\.0\.0\.1|localhost|\[::1\])(:\d+)?$/.test(host);
 
 let client;
 let db;
@@ -13,22 +28,46 @@ let db;
 export async function connect() {
   if (db) return db;
 
-  client = new MongoClient(URI, {
-    // Falha rapido em vez de pendurar a requisicao por 30 s quando o container
-    // do Mongo nao esta de pe — que e o erro mais provavel no desenvolvimento.
-    serverSelectionTimeoutMS: 3000,
-  });
+  client = new MongoClient(
+    URI,
+    isLocal
+      ? {
+          // Falha rapido em vez de pendurar a requisicao por 30 s quando o
+          // container do Mongo nao esta de pe — que e o erro mais provavel no
+          // desenvolvimento.
+          serverSelectionTimeoutMS: 3000,
+        }
+      : {
+          // Nada de `serverSelectionTimeoutMS` aqui: o default de 30 s do driver
+          // e calibrado justamente para o SRV + TLS a frio de um cluster
+          // gerenciado, e 3 s derrubaria o primeiro acesso depois de ocioso.
+          //
+          // O teto do M0 e 500 conexoes e o default do driver e 100 por
+          // processo: uma instancia cabe, mas um punhado de preview deploys
+          // somados nao, e o sintoma (falha intermitente de conexao em outro
+          // ambiente) e desagradavel de diagnosticar.
+          maxPoolSize: 10,
+        },
+  );
   await client.connect();
   db = client.db(DB_NAME);
 
-  // `userId` ja entra no indice mesmo valendo null em toda a fase 1: quando o
-  // login chegar, o indice nao precisa ser recriado.
-  await db.collection('books').createIndex({ userId: 1, order: 1 });
+  // So no local. Contra um banco gerenciado quem manda em indice e
+  // `scripts/db.mjs setup`, com a credencial de operacao — e ele tambem aplica
+  // o validador de schema, que `createIndex` nao alcanca porque `collMod` exige
+  // `dbAdmin`. Deixar o boot criando indice la teria dois donos para a mesma
+  // decisao, e um round trip a mais em todo cold start.
+  if (isLocal) {
+    for (const { key } of INDEXES) await db.collection(COLLECTION).createIndex(key);
+  }
 
   return db;
 }
 
-export const books = () => db.collection('books');
+/** Ha conexao viva? Usado pelo guarda das rotas de dado e pelo health check. */
+export const isConnected = () => Boolean(db);
+
+export const books = () => db.collection(COLLECTION);
 
 export async function close() {
   await client?.close();

@@ -29,7 +29,12 @@ src/scene/          Three.js: renderer.js (loop sob demanda), camera.js
 src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
                      paginador, menu de ordenação, tema
 src/data/            api.js (CRUD), search.js (Open Library), sort.js
-server/              Express + driver oficial do MongoDB (sem Mongoose)
+server/              Express + driver oficial do MongoDB (sem Mongoose):
+                     validate.js valida a entrada (zod), schema.js valida o
+                     documento gravado ($jsonSchema), limits.js é o que os dois
+                     dividem, db.js/books.js o resto
+scripts/db.mjs       check/setup/migrate — aplica o schema no banco e migra o
+                     acervo para o Atlas
 ```
 
 Não existe `bookshelf.obj`/`.mtl` no repo. A estante é gerada por código a
@@ -63,6 +68,21 @@ prateleiras, o que o arquivo não fazia.
   gravado permanentemente na lombada.
 - **Todo texto de usuário/API vai ao DOM por `textContent`, nunca
   `innerHTML`.** É a única barreira contra XSS na review.
+- **Existem duas validações, e a direção entre elas é o invariante.** O zod
+  (`validate.js`) valida a entrada; o `$jsonSchema` (`schema.js`) valida o
+  documento gravado. O banco só pode ser **igual ou mais frouxo** que o zod —
+  nunca mais estrito, senão a segunda barreira derruba em vez de defender.
+  Números compartilhados só via `limits.js`; nunca repetir um nos dois. E
+  cuidado ao assumir tipo: `rating: 0` chega ao BSON como `int` e `2.5` como
+  `double`, por isso é `bsonType: 'number'`.
+- **Campo novo no livro é deploy em dois passos.** Com
+  `additionalProperties: false`, alargar `schema.js` e rodar `db.mjs setup`
+  **antes** de subir o código que escreve o campo. Na ordem inversa, a escrita é
+  rejeitada em produção.
+- **O validador nunca é aplicado no boot da aplicação.** `collMod` exige
+  `dbAdmin`, e a aplicação usa um usuário `readWrite`. Isso é de propósito: quem
+  aplica é `scripts/db.mjs setup`, com a credencial de operação. Pelo mesmo
+  motivo o `createIndex` do boot só roda quando o banco é local.
 - **Fontes são auto-hospedadas e variáveis** (`public/fonts/`, hoje Bitter +
   Karla). Preferir sempre `wght@min..max` no Google Fonts a baixar
   instâncias estáticas — metade dos arquivos, mesma cobertura de peso.

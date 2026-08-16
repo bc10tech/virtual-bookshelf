@@ -44,9 +44,12 @@ atende o site inteiro.
 ```
 index.html          casca: canvas, FAB, painel-formulário, chips das estantes
 server/             Express + driver oficial do MongoDB (sem Mongoose)
-  db.js             conexão única e criação do índice
+  db.js             conexão única; timeout e pool conforme o banco é local ou não
+  limits.js         os limites que as DUAS validações dividem
   validate.js       validação de entrada (zod)
+  schema.js         validação do documento gravado ($jsonSchema) + índices
   books.js          CRUD em /api/v1/books
+scripts/db.mjs      aplica o schema no banco e migra o acervo
 src/
   config.js         TODOS os números do projeto moram aqui
   scene/            three.js: renderer, câmera, estante, livros, capas, tweens
@@ -122,6 +125,35 @@ estante — e dois exemplares do mesmo livro ficam geometricamente idênticos, q
 A ordenação da estante é preferência de visualização, não dado do livro: fica em
 `localStorage`, nunca no banco. O campo `order` continua sendo a ordem de
 inserção, e serve de desempate estável para todos os outros critérios.
+
+### Duas validações, não uma
+
+A entrada da API é validada por zod (`server/validate.js`) e o documento gravado
+é validado pelo próprio MongoDB (`$jsonSchema`, em `server/schema.js`). São
+barreiras independentes de propósito: a segunda continua valendo para qualquer
+escrita que não passe pelo Express.
+
+Elas não são geradas uma da outra — validam coisas diferentes, já que só o
+documento tem `order`, `createdAt` e `userId`. O que compartilham são os
+limites, em `server/limits.js`, e uma desigualdade: **o validador do banco só
+pode ser igual ou mais frouxo que o zod.** Se ele reprovasse algo que a API
+aceita, a defesa viraria a queda.
+
+O validador não é aplicado no boot: trocá-lo é `collMod`, que o papel
+`readWrite` da aplicação não tem. Quem aplica é o script, com a credencial de
+operação:
+
+```bash
+node --env-file-if-exists=.env scripts/db.mjs check   # o que seria reprovado?
+```
+
+```bash
+node --env-file-if-exists=.env scripts/db.mjs setup   # aplica schema e índices
+```
+
+Os dois aceitam `--local` para falar com o container. Há também
+`migrate [--dry-run] [--user <id>]`, que copia o acervo preservando `order` e
+`createdAt` — coisa que uma migração via `POST` destruiria.
 
 ## Ferramentas de desenvolvimento
 

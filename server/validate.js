@@ -1,7 +1,8 @@
 import { z } from 'zod';
+import { MAX, PAGES, RATING, COVER_HOST, DATE_RE, ID_RE } from './limits.js';
 
 /**
- * Validacao de entrada da API.
+ * Validacao de entrada da API — a PRIMEIRA barreira.
  *
  * Nasceu escrita a mao e virou zod quando o contrato foi versionado: cada campo
  * novo era uma chance de esquecer um caso, e o formato precisava ficar estavel
@@ -10,10 +11,13 @@ import { z } from 'zod';
  *
  * A superficie exportada e a mesma de antes (`validateBook`, `isValidId`) — o
  * `books.js` nao sabe que a implementacao mudou.
+ *
+ * Os limites vem de `limits.js`, que os divide com o `$jsonSchema` de
+ * `schema.js` (a segunda barreira, no proprio banco). O que NAO e compartilhado
+ * e a validade de calendario: `pattern` nao sabe que 30 de fevereiro nao
+ * existe, entao essa checagem so mora aqui — na direcao certa, porque esta
+ * barreira pode ser mais estrita que a outra, nunca o contrario.
  */
-
-const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
-const COVER_HOST = 'https://covers.openlibrary.org/';
 
 // As mensagens vao inteiras para o usuario: o cliente lanca `Error(body.error)`
 // e o painel mostra esse texto no formulario. Reescrever uma delas muda o que
@@ -31,17 +35,34 @@ const ERR = {
 };
 
 /**
- * O regex sozinho aceita 2026-13-45; o `Date.parse` e quem reprova mes e dia
- * fora da faixa. Os dois juntos, porque `Date.parse` tambem aceita formatos que
- * nao queremos ("15 Jan 2026").
+ * Tres condicoes, e a ORDEM delas e o ponto:
+ *
+ *   1. o regex reprova o que nem tem o formato ("15 Jan 2026", "2026-1-1") —
+ *      `Date.parse` sozinho aceitaria varios desses;
+ *   2. `Date.parse` reprova o que nao e data nenhuma (`9999-99-99`, mes 13);
+ *   3. so entao o round-trip reprova o dia que existe no formato mas nao no
+ *      calendario: `Date.parse('2026-02-30')` no V8 NAO devolve `NaN`, ele rola
+ *      para 2 de marco. Comparar a volta com a ida e o que pega 30 de fevereiro
+ *      (e 31 de abril, e 29 de fevereiro em ano comum).
+ *
+ * O passo 2 nao e redundante com o 3, e tirar ele troca um 400 por um 500:
+ * `new Date(NaN).toISOString()` lanca `RangeError`, e o zod so captura
+ * `ZodError` — o throw atravessaria o `safeParse`, chegaria ao handler de erro
+ * do `index.js` e viraria "erro interno" onde hoje ha uma mensagem de
+ * formulario.
  */
-const isIsoDate = (d) => DATE_RE.test(d) && !Number.isNaN(Date.parse(d));
+const isIsoDate = (d) => {
+  if (!DATE_RE.test(d)) return false;
+  const t = Date.parse(`${d}T00:00:00Z`);
+  if (Number.isNaN(t)) return false;
+  return new Date(t).toISOString().slice(0, 10) === d;
+};
 
 /** `olKey` e `isbn` seguem a mesma regra; string vazia vira null. */
 const reference = (name) =>
   z
     .string({ error: `${name} invalido` })
-    .max(100, { error: `${name} invalido` })
+    .max(MAX.reference, { error: `${name} invalido` })
     .nullable()
     .transform((v) => (v ? v.trim() : null));
 
@@ -57,27 +78,24 @@ const FIELDS = {
   title: z
     .string({ error: ERR.title })
     .transform((s) => s.trim())
-    .refine((s) => s.length > 0 && s.length <= 300, { error: ERR.title }),
+    .refine((s) => s.length > 0 && s.length <= MAX.title, { error: ERR.title }),
 
   author: z
     .string({ error: ERR.author })
-    .max(300, { error: ERR.author })
+    .max(MAX.author, { error: ERR.author })
     .nullable()
     .transform((v) => (v ?? '').trim()),
 
   pages: z
     .number({ error: ERR.pages })
     .int({ error: ERR.pages })
-    .min(1, { error: ERR.pages })
-    .max(5000, { error: ERR.pages })
+    .min(PAGES.min, { error: ERR.pages })
+    .max(PAGES.max, { error: ERR.pages })
     .nullable(),
 
-  // Allowlist de host: impede que o documento vire vetor para carregar imagem
-  // de qualquer origem no cliente. Quando o proxy de capas entrar (ponto 5 do
-  // steps.md), e aqui que a lista afrouxa.
   coverUrl: z
     .string({ error: ERR.cover })
-    .max(400, { error: ERR.cover })
+    .max(MAX.coverUrl, { error: ERR.cover })
     .refine((u) => u === '' || u.startsWith(COVER_HOST), { error: ERR.cover })
     .nullable(),
 
@@ -95,15 +113,15 @@ const FIELDS = {
 
   rating: z
     .number({ error: ERR.rating })
-    .min(0, { error: ERR.rating })
-    .max(5, { error: ERR.rating })
+    .min(RATING.min, { error: ERR.rating })
+    .max(RATING.max, { error: ERR.rating })
     // Meio ponto e permitido (2.5, 3.5...). Notas inteiras ja gravadas
     // continuam validas, entao nao ha migracao a fazer.
-    .refine((r) => (r * 2) % 1 === 0, { error: ERR.rating }),
+    .refine((r) => (r / RATING.step) % 1 === 0, { error: ERR.rating }),
 
   review: z
     .string({ error: ERR.review })
-    .max(2000, { error: ERR.review })
+    .max(MAX.review, { error: ERR.review })
     .nullable()
     .transform((v) => v ?? ''),
 };
@@ -189,4 +207,4 @@ export function validateBook(body, { partial = false } = {}) {
 }
 
 /** Ids sao gerados pelo cliente (uuid v4) ou pelo fallback base36. */
-export const isValidId = (id) => typeof id === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(id);
+export const isValidId = (id) => typeof id === 'string' && ID_RE.test(id);

@@ -10,6 +10,23 @@ const owner = () => null;
 
 const bad = (res, error, code = 400) => res.status(code).json({ error });
 
+/** `DocumentValidationFailure` — a segunda barreira (`$jsonSchema`) recusou a escrita. */
+const DOC_VALIDATION = 121;
+
+/**
+ * Se esta funcao roda, o furo esta na PRIMEIRA barreira: o zod deixou passar
+ * algo que o `$jsonSchema` de `schema.js` recusa. Por isso o `errInfo.details`
+ * — que no driver 6 diz o keyword exato e o campo que falhou — vai inteiro para
+ * o log: e a unica pista de onde as duas divergiram, e sem ela isto seria um
+ * 500 opaco. Para o cliente vai so uma frase fixa; a estrutura interna do
+ * documento nao e assunto dele.
+ */
+const schemaRejected = (res, err, where) => {
+  console.error(`[api] ${where}: documento reprovado pelo validador do banco`);
+  console.error(JSON.stringify(err.errInfo ?? null, null, 2));
+  return bad(res, 'documento reprovado pela validacao do banco', 422);
+};
+
 // Numeros de servidor, sem relacao com o `config.js` do cliente (que descreve a
 // cena). O cliente nao manda `limit`: deixar o padrao aqui mantem o tamanho de
 // pagina num lugar so.
@@ -91,6 +108,7 @@ router.post('/', async (req, res) => {
     await books().insertOne(doc);
   } catch (err) {
     if (err?.code === 11000) return bad(res, 'id ja existe', 409);
+    if (err?.code === DOC_VALIDATION) return schemaRejected(res, err, 'POST');
     throw err;
   }
   res.status(201).json(doc);
@@ -114,11 +132,21 @@ router.patch('/:id', async (req, res) => {
     return bad(res, 'endDate nao pode ser anterior a startDate');
   }
 
-  const doc = await books().findOneAndUpdate(
-    { _id: req.params.id, userId: owner() },
-    { $set: { ...parsed.value, updatedAt: new Date().toISOString() } },
-    { returnDocument: 'after' },
-  );
+  let doc;
+  try {
+    doc = await books().findOneAndUpdate(
+      { _id: req.params.id, userId: owner() },
+      { $set: { ...parsed.value, updatedAt: new Date().toISOString() } },
+      { returnDocument: 'after' },
+    );
+  } catch (err) {
+    // Com `validationLevel: 'strict'` o update valida o documento INTEIRO depois
+    // da mudanca, entao ate um PATCH so da nota reprova se o que ja estava
+    // gravado for invalido. E por isso que `db.mjs setup` roda o `check` antes
+    // de aplicar o validador.
+    if (err?.code === DOC_VALIDATION) return schemaRejected(res, err, `PATCH ${req.params.id}`);
+    throw err;
+  }
   res.json(doc);
 });
 
