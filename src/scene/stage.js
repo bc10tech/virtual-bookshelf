@@ -43,6 +43,37 @@ let onCasesChangedCb = () => {};
 /** Meshes da estante ativa, por id do registro. */
 const meshById = new Map();
 
+/**
+ * Ids com mesh sendo montado AGORA — a fila de espera do `meshById`.
+ *
+ * Sem isto, um `syncScene` que entre enquanto outro espera as capas recalcula
+ * `missing` sobre um `meshById` que o primeiro ainda nao preencheu (ele so
+ * escreve no callback, conforme cada capa chega). Os dois criam o mesmo livro,
+ * o `meshById.set` do segundo sobrescreve a entrada, e o mesh do primeiro fica
+ * ORFAO dentro da cena: invisivel para a limpeza da etapa 1, que itera
+ * `meshById`, e desenhado exatamente por cima do irmao. Alem do desenho
+ * duplicado, excluir esse livro depois chama `dropBookAssets` num material que
+ * o orfao continua usando.
+ *
+ * Havia seis chamadores de `syncScene` e nenhum guarda. A janela era estreita
+ * enquanto a capa carregava em ~100 ms; quando `covers.openlibrary.org` ficou
+ * inalcancavel, cada `loadImage` passou a gastar os 8 s inteiros do timeout e
+ * ela escancarou — qualquer clique durante o carregamento duplicava a estante.
+ */
+const pendingIds = new Set();
+
+/**
+ * O livro ainda pertence a cena AGORA? Precisa ser perguntado depois do
+ * download da capa, nao antes: nesse intervalo a estante ativa pode ter mudado,
+ * o registro pode ter sido excluido e a ordenacao pode ter movido tudo de
+ * lugar. Devolve a colocacao corrente, para o mesh nascer no lugar certo.
+ */
+function stillWanted(id) {
+  const placement = layout.placements.get(id);
+  if (placement?.caseIndex !== activeCase) return null;
+  return records.some((r) => r._id === id) ? placement : null;
+}
+
 const raycaster = new Raycaster();
 const ndc = new Vector2();
 
@@ -140,12 +171,41 @@ async function syncScene({ animate = false, exclude = null } = {}) {
   }
 
   // 3) o que falta e criado (aqui sim ha download de capa e desenho de atlas)
-  const missing = [...wanted.values()].filter(({ rec }) => !meshById.has(rec._id));
+  //
+  // `pendingIds` tira da conta o que outro syncScene ja esta montando: e o
+  // unico ponto em que este metodo le um estado que ele mesmo so vai escrever
+  // depois de um `await`.
+  const missing = [...wanted.values()].filter(
+    ({ rec }) => !meshById.has(rec._id) && !pendingIds.has(rec._id),
+  );
   if (missing.length) {
-    await createBooksBatched(missing, (mesh, rec) => {
-      meshById.set(rec._id, mesh);
-      addBook(mesh);
-    });
+    for (const { rec } of missing) pendingIds.add(rec._id);
+    try {
+      await createBooksBatched(missing, (mesh, rec) => {
+        // O id sair de `pendingIds` por outra mao (editar ou excluir) significa
+        // que esta montagem foi invalidada no meio: o mesh nasceu com o dado
+        // velho, e quem invalidou ja disparou um syncScene que o refaz.
+        const valido = pendingIds.delete(rec._id);
+
+        const placement = valido ? stillWanted(rec._id) : null;
+        if (!placement) {
+          // O mundo mudou durante o download. Anexar assim mesmo criaria o
+          // orfao pelo outro caminho. A geometria e compartilhada e nunca se
+          // descarta; o que precisa voltar e o material — mas so se ninguem
+          // mais estiver usando.
+          if (!meshById.has(rec._id)) dropBookAssets(rec._id);
+          return;
+        }
+
+        applyPlacement(mesh, placement);
+        meshById.set(rec._id, mesh);
+        addBook(mesh);
+      });
+    } finally {
+      // Uma capa que estoure deixa o callback sem rodar; sem isto o id ficaria
+      // pendente para sempre e o livro nunca mais seria criado.
+      for (const { rec } of missing) pendingIds.delete(rec._id);
+    }
   }
 
   invalidate();
@@ -163,6 +223,9 @@ export async function initStage(initial) {
   setContextRestoreHandler(() => {
     // O contexto WebGL caiu: meshes e texturas se foram, tudo e recriado.
     meshById.clear();
+    // Os meshes em voo morreram junto com o contexto. Deixar os ids pendentes
+    // faria o syncScene abaixo pular exatamente os livros que precisa recriar.
+    pendingIds.clear();
     dropAllBookAssets();
     builtShelves = 0;
     syncScene().catch((err) => console.error('[stage] falha ao restaurar', err));
@@ -209,12 +272,22 @@ export async function addRecord(rec) {
     activeCase = placement.caseIndex;
     onCasesChangedCb(layout.caseCount, activeCase);
   }
-  await syncScene({ animate: true, exclude: rec._id });
 
-  const mesh = await createBookMesh(rec, placement);
-  meshById.set(rec._id, mesh);
-  addBook(mesh);
-  await playAddAnimation(mesh, placement);
+  // O `exclude` protege este livro so do syncScene da linha abaixo. Enquanto a
+  // capa dele baixa e a animacao roda, qualquer OUTRO syncScene o veria faltando
+  // e o criaria de novo — e o mesh que voa aqui viraria orfao. `pendingIds`
+  // cobre a janela inteira, do inicio do voo ate ele pousar.
+  pendingIds.add(rec._id);
+  try {
+    await syncScene({ animate: true, exclude: rec._id });
+
+    const mesh = await createBookMesh(rec, placement);
+    meshById.set(rec._id, mesh);
+    addBook(mesh);
+    await playAddAnimation(mesh, placement);
+  } finally {
+    pendingIds.delete(rec._id);
+  }
   return placement;
 }
 
@@ -230,6 +303,8 @@ export async function updateRecord(rec) {
     detachBookMesh(mesh);
     meshById.delete(rec._id);
   }
+  // Invalida uma montagem em voo: o mesh dela foi desenhado com a capa antiga.
+  pendingIds.delete(rec._id);
   dropBookAssets(rec._id);
 
   recompute();
@@ -245,6 +320,7 @@ export async function removeRecord(id) {
     detachBookMesh(mesh);
     meshById.delete(id);
   }
+  pendingIds.delete(id);
   dropBookAssets(id);
 
   recompute();

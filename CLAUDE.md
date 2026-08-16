@@ -59,6 +59,16 @@ prateleiras, o que o arquivo não fazia.
 - **Renderização é sob demanda.** Nunca adicionar um `requestAnimationFrame`
   contínuo; toda mudança visual passa por `invalidate()` (`renderer.js`). Ao
   mexer em algo que muda a cena, verificar que ainda dá 0 frames em repouso.
+- **`syncScene()` é assíncrono e reentrante — todo mesh nasce por `pendingIds`.**
+  Ele espera o download das capas no meio do caminho, e só escreve em `meshById`
+  *depois*. Sem o `pendingIds` (`stage.js`), um segundo `syncScene` que entre
+  nessa janela recalcula `missing` sobre um mapa ainda vazio, cria os mesmos
+  livros de novo, e o mesh do primeiro fica órfão *dentro* da cena — invisível
+  para a limpeza, que itera `meshById`, e desenhado por cima do irmão. A UI é
+  ligada em `main.js` **antes** do `initStage`, então basta clicar em ordenar
+  enquanto a estante carrega. Isso já foi bug uma vez: 76 meshes para 66 livros.
+  Quem criar mesh fora do `syncScene` (é o caso do `addRecord`) tem que marcar o
+  id em `pendingIds` pela duração inteira.
 - **Capas da Open Library**: `img.crossOrigin = 'anonymous'` é obrigatório
   (senão o canvas fica contaminado e o upload pro WebGL lança
   `SecurityError`), e a URL precisa de `?default=false` (senão uma obra sem
