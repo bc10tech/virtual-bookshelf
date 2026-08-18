@@ -1,11 +1,20 @@
-import { CanvasTexture, SRGBColorSpace, LinearMipmapLinearFilter, LinearFilter } from 'three';
-import { COVER, KD, kdToCss } from '../config.js';
-import { editionKey } from './layout.js';
+import {
+  CanvasTexture,
+  SRGBColorSpace,
+  LinearMipmapLinearFilter,
+  LinearFilter,
+} from 'three';
+import { ANIM, COVER, KD, OL, kdToCss } from '../config.js';
+import { editionKey, bookDimensions, rememberCoverAspect } from './layout.js';
 
 /**
- * Uma capa vira um atlas 256x256 desenhado em canvas: capa, lombada,
- * contracapa e miolo na mesma textura. Um livro = 1 textura = 1 material =
- * 1 draw call.
+ * Uma capa vira um atlas desenhado em canvas: capa, lombada, contracapa e
+ * miolo na mesma textura. Um livro = 1 textura = 1 material = 1 draw call.
+ *
+ * O desenho acontece numa grade de COVER.UNITS (256) e o canvas real e maior
+ * ou igual: `ctx.scale` faz o resto, e o texto — vetorial — sai rasterizado na
+ * resolucao real. Por isso as mesmas funcoes desenham o atlas da estante (512
+ * px no desktop, 256 no celular) e o atlas temporario da apresentacao (1024).
  */
 
 /**
@@ -19,6 +28,19 @@ const W_BOLD = 700;
 const W_REG = 400;
 const PAGES_CSS = kdToCss(KD.bookPages);
 const FOIL_CSS = kdToCss(KD.bookFoil);
+
+const UNITS = COVER.UNITS;
+
+/**
+ * Mesmo criterio do `setPixelRatioCap` (renderer.js): ponteiro grosso e
+ * celular, onde a lombada tem ~190 px de tela e o atlas de 256 basta. E num
+ * monitor de DPR 1 a lombada tem ~165 css px < 256 texels — 512 nao ganharia
+ * nada e custaria 4x de memoria.
+ */
+const coarse =
+  window.matchMedia('(pointer: coarse)').matches || (window.devicePixelRatio || 1) <= 1;
+const ATLAS_PX = coarse ? COVER.ATLAS_PX_COARSE : COVER.ATLAS_PX_FINE;
+const PRESENT_PX = coarse ? COVER.PRESENT_PX_COARSE : COVER.PRESENT_PX_FINE;
 
 // --------------------------------------------------------------- fontes ---
 
@@ -193,6 +215,74 @@ function loadImage(url, timeoutMs = COVER.LOAD_TIMEOUT_MS) {
   });
 }
 
+/**
+ * Download que NAO e o atlas da estante: pre-aquecimento ao escolher um
+ * resultado e a capa `-L` da apresentacao. Nao toca no disjuntor em nenhuma
+ * direcao — nao abre, nao fecha, nao vira sonda — e por isso nao entra em
+ * `refusedIds`. Com BREAKER_FAILURES = 1, uma `-L` (50-150 KB contra 14 KB da
+ * `-M`) que estourasse o timeout pelo `loadImage` normal abriria a porta e
+ * apagaria as capas de uma estante saudavel por 30 s; e no estado meio-aberto
+ * ela roubaria a unica sonda. Respeita a porta ABERTA (devolve null na hora,
+ * para nao gastar banda num host fora), mas nao opina sobre ela.
+ */
+function loadImageQuiet(url, timeoutMs) {
+  if (!url || breakerIsOpen()) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.decoding = 'async';
+    let resolvido = false;
+    const timer = setTimeout(() => {
+      if (resolvido) return;
+      resolvido = true;
+      img.onload = img.onerror = null;
+      img.src = '';
+      resolve(null);
+    }, timeoutMs);
+    const done = (v) => {
+      if (resolvido) return;
+      resolvido = true;
+      clearTimeout(timer);
+      resolve(v);
+    };
+    img.onload = () => done(img.naturalWidth > 1 ? img : null);
+    img.onerror = () => done(null);
+    img.src = url;
+  });
+}
+
+/** `-M.jpg` -> `-L.jpg` preservando o `?default=false`; null se a URL nao e da Open Library. */
+const SHELF_SIZE_RE = new RegExp(`-${OL.COVER_SIZE_SHELF}\\.jpg(\\?|$)`);
+function hiResUrl(url) {
+  if (!url) return null;
+  const hi = url.replace(SHELF_SIZE_RE, `-${OL.COVER_SIZE_PRESENT}.jpg$1`);
+  return hi === url ? null : hi;
+}
+
+// ---------------------------------------------------------- pre-aquecimento ---
+
+/**
+ * Ao escolher um resultado no painel, as duas capas (`-M` da estante e `-L` da
+ * apresentacao) comecam a baixar enquanto a pessoa preenche datas, nota e
+ * review. No cadastro, o `buildPresentTexture` consome a promessa da `-L`
+ * daqui em vez de esperar a rede: a troca para a capa nitida acontece no
+ * primeiro frame da apresentacao, nao no meio dela.
+ *
+ * Uma entrada so, a ultima escolha vence — o formulario so cadastra um livro
+ * por vez, e guardar mais seria segurar imagens que nunca serao usadas.
+ */
+const warm = new Map();
+
+export function warmCover(url) {
+  const hi = hiResUrl(url);
+  if (!url || warm.has(url)) return;
+  warm.clear();
+  warm.set(url, {
+    m: loadImageQuiet(url, COVER.LOAD_TIMEOUT_MS),
+    l: hi ? loadImageQuiet(hi, COVER.LOAD_TIMEOUT_MS) : Promise.resolve(null),
+  });
+}
+
 // --------------------------------------------------------------- recuperacao ---
 
 /**
@@ -248,13 +338,42 @@ const rgbCss = ({ r, g, b }, k = 1) =>
 /** Luminancia relativa, para decidir entre texto claro e escuro. */
 const isDark = ({ r, g, b }) => (0.299 * r + 0.587 * g + 0.114 * b) / 255 < 0.55;
 
+/**
+ * Cor de destaque do livro: a media da capa quando ha imagem; sem capa, uma
+ * das 4 cores de capa do .mtl original escolhida pela EDICAO (nao pelo id do
+ * registro), para que a estante fique variada mas dois exemplares do mesmo
+ * livro tenham a mesma cor — o mesmo motivo da altura.
+ */
+function accentFor(rec, img) {
+  const sampled = img ? dominantColor(img) : null;
+  if (sampled) return sampled;
+  const palette =
+    KD.bookCovers[Math.abs(hashCode(editionKey(rec))) % KD.bookCovers.length];
+  return { r: palette[0] * 255, g: palette[1] * 255, b: palette[2] * 255 };
+}
+
 // ---------------------------------------------------------------- desenho ---
 
-/** Corta a imagem no centro para preencher a celula sem distorcer (object-fit: cover). */
-function drawCovering(ctx, img, cell) {
-  const scale = Math.max(cell.w / img.naturalWidth, cell.h / img.naturalHeight);
-  const w = img.naturalWidth * scale;
-  const h = img.naturalHeight * scale;
+/**
+ * Encaixa a imagem INTEIRA na celula, sem corte, ja compensando a diferenca
+ * entre a proporcao da celula e a da face do livro onde ela vai ser mapeada:
+ * a imagem e desenhada com proporcao `img x (celula / face)`, de modo que,
+ * esticada para a face, saia exata. Quando a profundidade do livro seguiu a
+ * propria capa (o caso normal), isso preenche a celula por completo; so quando
+ * o clamp de profundidade morde sobra uma borda, na cor de destaque.
+ */
+function drawContained(ctx, img, cell, faceAspect, accent) {
+  ctx.fillStyle = rgbCss(accent);
+  ctx.fillRect(cell.x, cell.y, cell.w, cell.h);
+
+  const cellAspect = cell.w / cell.h;
+  const r = (img.naturalWidth / img.naturalHeight) * (cellAspect / faceAspect);
+  let w = cell.w;
+  let h = w / r;
+  if (h > cell.h) {
+    h = cell.h;
+    w = h * r;
+  }
   ctx.drawImage(img, cell.x + (cell.w - w) / 2, cell.y + (cell.h - h) / 2, w, h);
 }
 
@@ -367,49 +486,22 @@ function drawSpine(ctx, rec, cell, accent) {
 // ----------------------------------------------------------------- atlas ---
 
 /**
- * Monta o atlas de um livro.
- * @param {object} rec documento do livro
- * @returns {Promise<CanvasTexture>}
+ * Desenha o atlas inteiro em UNIDADES num contexto ja escalado para a
+ * resolucao real. `img` pode ser null (capa procedural).
  */
-export async function buildCoverTexture(rec) {
-  await ensureFonts(`${rec.title}${rec.author ?? ''}`);
-
-  const size = COVER.SIZE;
-  const canvas = document.createElement('canvas');
-  canvas.width = canvas.height = size;
-  const ctx = canvas.getContext('2d');
-
+function drawAtlas(ctx, rec, img, accent) {
   // Base creme: qualquer area do atlas que sobre ja fica com a cor do miolo,
   // em vez de transparente (que suja os niveis de mipmap).
   ctx.fillStyle = PAGES_CSS;
-  ctx.fillRect(0, 0, size, size);
-
-  // Tres desfechos, e distingui-los e o que torna a volta barata: veio a capa;
-  // a obra nao tem capa e a procedural e a resposta DEFINITIVA; ou o host nao
-  // respondeu (recusa do disjuntor ou espera estourada) e a procedural e
-  // PROVISORIA — este livro entra na lista de quem deve ser redesenhado quando
-  // o host voltar.
-  const carregada = rec.coverUrl ? await loadImage(rec.coverUrl) : null;
-  if (carregada === SEM_RESPOSTA) refusedIds.add(rec._id);
-  else refusedIds.delete(rec._id);
-
-  const img = carregada === SEM_RESPOSTA ? null : carregada;
-  const sampled = img ? dominantColor(img) : null;
-
-  // Sem capa: escolhe uma das 4 cores de capa do .mtl original pela EDICAO (nao
-  // pelo id do registro), para que a estante fique variada mas dois exemplares
-  // do mesmo livro tenham a mesma cor — o mesmo motivo da altura.
-  const palette =
-    KD.bookCovers[Math.abs(hashCode(editionKey(rec))) % KD.bookCovers.length];
-  const accent = sampled ?? {
-    r: palette[0] * 255,
-    g: palette[1] * 255,
-    b: palette[2] * 255,
-  };
+  ctx.fillRect(0, 0, UNITS, UNITS);
 
   if (img) {
+    // A face da capa tem a proporcao da PROFUNDIDADE do livro, que por sua vez
+    // seguiu a imagem — a mesma conta que o layout faz, entao a imagem sai
+    // exata na face.
+    const { height, depth } = bookDimensions(rec);
     try {
-      drawCovering(ctx, img, COVER.CELL_FRONT);
+      drawContained(ctx, img, COVER.CELL_FRONT, depth / height, accent);
     } catch {
       drawFallbackFront(ctx, rec, COVER.CELL_FRONT, accent);
     }
@@ -425,16 +517,89 @@ export async function buildCoverTexture(rec) {
 
   ctx.fillStyle = PAGES_CSS;
   ctx.fillRect(COVER.CELL_PAGES.x, COVER.CELL_PAGES.y, COVER.CELL_PAGES.w, COVER.CELL_PAGES.h);
+}
 
+/** Canvas quadrado de `px` pixels reais, com o contexto ja em unidades. */
+function atlasCanvas(px) {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = px;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(px / UNITS, px / UNITS);
+  return { canvas, ctx };
+}
+
+function makeTexture(canvas) {
   const tex = new CanvasTexture(canvas);
   tex.colorSpace = SRGBColorSpace;
   // Os livros aparecem com ~30 px de largura na tela: sem mipmap as capas
-  // cintilam violentamente a cada movimento de camera.
+  // cintilam violentamente a cada movimento de camera. (E o atlas da
+  // apresentacao encolhe 10x durante o voo ate a prateleira.)
   tex.generateMipmaps = true;
   tex.minFilter = LinearMipmapLinearFilter;
   tex.magFilter = LinearFilter;
   tex.anisotropy = COVER.MAX_ANISOTROPY;
   return tex;
+}
+
+/**
+ * Monta o atlas de um livro para a estante.
+ * @param {object} rec documento do livro
+ * @returns {Promise<CanvasTexture>}
+ */
+export async function buildCoverTexture(rec) {
+  await ensureFonts(`${rec.title}${rec.author ?? ''}`);
+
+  // Tres desfechos, e distingui-los e o que torna a volta barata: veio a capa;
+  // a obra nao tem capa e a procedural e a resposta DEFINITIVA; ou o host nao
+  // respondeu (recusa do disjuntor ou espera estourada) e a procedural e
+  // PROVISORIA — este livro entra na lista de quem deve ser redesenhado quando
+  // o host voltar.
+  //
+  // O pre-aquecimento (`warmCover`) e consultado primeiro: se a `-M` ja veio
+  // por ele, nao ha rede nem disjuntor a consultar.
+  let carregada = null;
+  if (rec.coverUrl) {
+    const quente = await (warm.get(rec.coverUrl)?.m ?? null);
+    carregada = quente ?? (await loadImage(rec.coverUrl));
+  }
+  if (carregada === SEM_RESPOSTA) refusedIds.add(rec._id);
+  else refusedIds.delete(rec._id);
+
+  const img = carregada === SEM_RESPOSTA ? null : carregada;
+
+  // A proporcao da capa decide a profundidade do livro (layout.js). SO a `-M`
+  // anota: a `-L` da apresentacao difere dela por arredondamento, e 1 mm de
+  // diferenca dispararia um reflow de nada no proximo syncScene.
+  if (img) rememberCoverAspect(rec, img.naturalWidth / img.naturalHeight);
+
+  const { canvas, ctx } = atlasCanvas(ATLAS_PX);
+  drawAtlas(ctx, rec, img, accentFor(rec, img));
+  return makeTexture(canvas);
+}
+
+/**
+ * Atlas TEMPORARIO da apresentacao, com a capa `-L`. Vive so enquanto o livro
+ * esta grande no centro da tela; quem chama descarta no pouso. Nunca rejeita e
+ * nunca demora mais que a propria apresentacao — depois disso o resultado
+ * seria jogado fora de qualquer jeito.
+ * @returns {Promise<CanvasTexture|null>}
+ */
+export async function buildPresentTexture(rec) {
+  try {
+    const url = rec.coverUrl;
+    if (!url) return null;
+    const entry = warm.get(url);
+    warm.delete(url);
+    const img = await (entry?.l ?? loadImageQuiet(hiResUrl(url), ANIM.PRESENT_MS + ANIM.HOLD_MS));
+    if (!img) return null;
+
+    await ensureFonts(`${rec.title}${rec.author ?? ''}`);
+    const { canvas, ctx } = atlasCanvas(PRESENT_PX);
+    drawAtlas(ctx, rec, img, accentFor(rec, img));
+    return makeTexture(canvas);
+  } catch {
+    return null;
+  }
 }
 
 function hashCode(s) {

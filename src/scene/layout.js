@@ -47,17 +47,34 @@ function fnv1a(str) {
 const rand01 = (key, salt) => (fnv1a(key + salt) % 100000) / 100000;
 
 /**
- * Dimensoes fisicas de um livro. `pages` manda na espessura; altura e
- * profundidade vem da edicao — entao dois exemplares do mesmo livro sao
- * geometricamente identicos.
+ * Proporcao (largura/altura) da capa real de cada EDICAO, anotada pelo
+ * `cover.js` quando a imagem chega. Chaveada por `editionKey` pelo mesmo motivo
+ * da altura: dois exemplares do mesmo livro tem que sair identicos.
+ */
+const coverAspect = new Map();
+
+export function rememberCoverAspect(rec, aspect) {
+  if (!Number.isFinite(aspect) || aspect <= 0) return;
+  coverAspect.set(editionKey(rec), aspect);
+}
+
+/**
+ * Dimensoes fisicas de um livro. `pages` manda na espessura; altura vem da
+ * edicao (hash) e a profundidade vem da PROPORCAO DA CAPA — assim a capa
+ * preenche a face inteira, sem corte nem barra. Sem capa (ou antes de ela
+ * chegar), cai na razao fixa.
+ *
+ * A profundidade so e conhecida depois do download, e isso e seguro porque ela
+ * NUNCA entra no empacotamento: `computeLayout` so le `thickness`. Quem cria o
+ * mesh rele as dimensoes depois da textura (`refreshDims` no stage.js), e a
+ * mudanca nao invalida x, prateleira nem estante de ninguem.
  */
 export function bookDimensions(rec) {
   const thickness = bookThickness(rec.pages);
   const height = BOOK.HEIGHT_MIN + BOOK.HEIGHT_RANGE * rand01(editionKey(rec), '#h');
-  const depth = Math.min(
-    BOOK.DEPTH_MAX,
-    Math.max(BOOK.DEPTH_MIN, height / BOOK.DEPTH_RATIO),
-  );
+  const aspect = coverAspect.get(editionKey(rec));
+  const raw = aspect ? height * aspect : height / BOOK.DEPTH_RATIO;
+  const depth = Math.min(BOOK.DEPTH_MAX, Math.max(BOOK.DEPTH_MIN, raw));
   return { thickness, height, depth };
 }
 

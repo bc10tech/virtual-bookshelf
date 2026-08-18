@@ -1,9 +1,9 @@
-import { Raycaster, Vector2, Vector3, Quaternion } from 'three';
+import { Raycaster, Vector2, Vector3, Quaternion, MeshLambertMaterial } from 'three';
 import { ANIM, BOOK, SHELF, UI } from '../config.js';
 import { booksGroup, camera, invalidate, setContextRestoreHandler } from './renderer.js';
 import { controls, frameCase, pointInFrontOfCamera, visibleSizeAt } from './camera.js';
 import { buildCase } from './shelf.js';
-import { computeLayout, slotPosition } from './layout.js';
+import { computeLayout, slotPosition, bookDimensions } from './layout.js';
 import {
   createBookMesh,
   createBooksBatched,
@@ -13,7 +13,7 @@ import {
   dropBookAssets,
   dropAllBookAssets,
 } from './book.js';
-import { setOnCoversRecovered } from './cover.js';
+import { setOnCoversRecovered, buildPresentTexture } from './cover.js';
 import { sortRecords, loadSort, saveSort } from '../data/sort.js';
 import {
   tween,
@@ -73,6 +73,24 @@ function stillWanted(id) {
   const placement = layout.placements.get(id);
   if (placement?.caseIndex !== activeCase) return null;
   return records.some((r) => r._id === id) ? placement : null;
+}
+
+/**
+ * Rele as dimensoes de um livro DEPOIS de a textura existir: a profundidade
+ * segue a proporcao da capa (`layout.js`), que so e conhecida quando a imagem
+ * chega — e o layout foi calculado antes disso.
+ *
+ * Muta a colocacao in-place de proposito: `wanted`, `stillWanted` e
+ * `mesh.userData.placement` apontam para o MESMO objeto, e todo leitor de
+ * `depth` le na hora de usar. Trocar o objeto deixaria copias velhas por ai.
+ * E prefere o layout CORRENTE ao `fallback`, porque em `addRecord` a
+ * colocacao e capturada antes de dois awaits, e uma ordenacao no meio troca o
+ * mapa inteiro.
+ */
+function refreshDims(rec, fallback = null) {
+  const p = layout.placements.get(rec._id) ?? fallback;
+  if (p) Object.assign(p, bookDimensions(rec));
+  return p;
 }
 
 const raycaster = new Raycaster();
@@ -198,7 +216,7 @@ async function syncScene({ animate = false, exclude = null } = {}) {
           return;
         }
 
-        applyPlacement(mesh, placement);
+        applyPlacement(mesh, refreshDims(rec, placement));
         meshById.set(rec._id, mesh);
         addBook(mesh);
       });
@@ -299,17 +317,25 @@ export async function addRecord(rec) {
   // e o criaria de novo — e o mesh que voa aqui viraria orfao. `pendingIds`
   // cobre a janela inteira, do inicio do voo ate ele pousar.
   pendingIds.add(rec._id);
+  let final = placement;
   try {
     await syncScene({ animate: true, exclude: rec._id });
 
     const mesh = await createBookMesh(rec, placement);
+    // A capa chegou: a profundidade agora e a da imagem, e o layout corrente
+    // pode nem ser mais o de cima (uma ordenacao durante o download).
+    final = refreshDims(rec, placement);
+    // A capa nitida da apresentacao comeca a ser montada AGORA e nao e
+    // esperada: a animacao parte com o atlas da estante e troca quando (se) a
+    // `-L` chegar a tempo.
+    const hiRes = buildPresentTexture(rec);
     meshById.set(rec._id, mesh);
     addBook(mesh);
-    await playAddAnimation(mesh, placement);
+    await playAddAnimation(mesh, final, hiRes);
   } finally {
     pendingIds.delete(rec._id);
   }
-  return placement;
+  return final;
 }
 
 /** Substitui um registro editado. A capa pode ter mudado, entao o atlas cai. */
@@ -354,17 +380,48 @@ export async function removeRecord(id) {
  * Apresentar (500 ms) -> segurar (500 ms) -> voar (600 ms).
  * Tudo relativo a camera, porque com o OrbitControls ela pode estar em
  * qualquer angulo quando o usuario confirma.
+ *
+ * `hiRes` e a promessa do atlas temporario com a capa `-L`. Se ela resolver
+ * enquanto o livro esta parado de frente (apresentar + segurar), o mesh troca
+ * para um material temporario com ela; no pouso volta ao material do cache e o
+ * temporario e descartado. Se chegar durante o voo ou depois, so e descartada
+ * — trocar ali seria um pisca sem ganho, o livro ja esta encolhendo.
  */
-function playAddAnimation(mesh, placement) {
+function playAddAnimation(mesh, placement, hiRes = Promise.resolve(null)) {
   const base = new Vector3(placement.thickness, placement.height, placement.depth);
   const slot = slotPosition(placement);
   const target = new Vector3(slot.x, slot.y, slot.z);
 
+  // O material do cache (`assets` em book.js) NAO e tocado: a troca e no mesh.
+  const cached = mesh.material;
+  let phase = 'present';
+  let temp = null;
+
   const settle = () => {
+    phase = 'done';
+    if (temp) {
+      mesh.material = cached;
+      temp.map.dispose();
+      temp.dispose();
+      temp = null;
+    }
     applyPlacement(mesh, placement);
     controls.enabled = true;
     invalidate();
   };
+
+  // Ligado ANTES do atalho de movimento reduzido: la o settle roda sincrono, e
+  // uma textura que chegue depois precisa ser descartada do mesmo jeito.
+  hiRes.then((tex) => {
+    if (!tex) return;
+    if (phase !== 'present') {
+      tex.dispose();
+      return;
+    }
+    temp = new MeshLambertMaterial({ map: tex });
+    mesh.material = temp;
+    invalidate();
+  });
 
   if (reducedMotion()) {
     settle();
@@ -412,6 +469,9 @@ function playAddAnimation(mesh, placement) {
           delay: ANIM.HOLD_MS,
           ease: easeInOutCubic,
           onUpdate: (u) => {
+            // O primeiro update so chega DEPOIS do delay (segurar), entao a
+            // capa nitida ainda pode entrar durante toda a pausa.
+            phase = 'fly';
             // Bezier quadratica present -> control -> target
             const inv = 1 - u;
             mesh.position

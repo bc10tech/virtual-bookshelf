@@ -16,7 +16,7 @@ import { createStars } from './stars.js';
 
 const $ = (id) => document.getElementById(id);
 
-export function createPanel({ onSubmit, onUpdate, onDelete, onOpen }) {
+export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) {
   const fab = $('fab');
   const panel = $('panel');
   const panelTitle = $('panel-title');
@@ -230,6 +230,9 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen }) {
     closeList();
     showChosen();
     (selection.pagesLocked ? start : pages).focus();
+    // A pessoa ainda vai preencher datas, nota e review: e tempo de sobra para
+    // as capas baixarem antes do cadastro (ver `warmCover` em cover.js).
+    onChoose?.(selection);
   }
 
   function showChosen() {

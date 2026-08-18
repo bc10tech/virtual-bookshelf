@@ -75,8 +75,41 @@ export const KD = {
   ],
 };
 
+/**
+ * Madeira procedural da estante (`wood.js`). Um canvas gerado no boot vira o
+ * `map` dos materiais walnut: 0 KB de asset, um unico ladrilho, os mesmos 3
+ * draw calls. Os tons sao derivados de KD.walnut, entao a cor MEDIA da estante
+ * continua a do .mtl; o rodape usa o mesmo mapa com DARK_TINT (a razao
+ * walnutDark/walnut por canal), para continuar mais escuro que o resto.
+ */
+export const WOOD = {
+  PX: 512, // ladrilho quadrado; potencia de 2 por causa de repeat + mipmaps
+  TILE_M: 0.6, // um ladrilho cobre 0,6 m de madeira ao longo do veio
+  SEED: 7, // deterministico: a estante nasce igual a cada reload
+  DARK_TINT: KD.walnutDark.map((v, i) => v / KD.walnut[i]),
+  ANISOTROPY: 4,
+
+  // Tabuas: laterais, prateleiras, tampo e rodape.
+  BOARD: {
+    KD: KD.walnut,
+    RINGS: 11, // aneis por ladrilho, transversais ao veio
+    WOBBLE: 0.6, // quanto os aneis serpenteiam ao longo do veio (em aneis)
+    CONTRAST: 0.42, // amplitude claro/escuro em torno do tom base
+  },
+  // Painel de fundo: a mesma madeira no tom mais claro do .mtl, com poucos
+  // aneis largos e contraste baixo. E o fundo dos livros — tem que ter textura
+  // para nao parecer plastico, mas nao pode competir com as lombadas.
+  PANEL: {
+    KD: KD.backPanel,
+    RINGS: 4,
+    WOBBLE: 0.2,
+    CONTRAST: 0.1,
+  },
+};
+
 /** Transferencia linear -> sRGB, a mesma que o three aplica na saida. */
-const linearToSrgb = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055);
+export const linearToSrgb = (v) =>
+  v <= 0.0031308 ? v * 12.92 : 1.055 * v ** (1 / 2.4) - 0.055;
 
 /**
  * Kd linear do .mtl -> `#rrggbb` para o canvas 2D.
@@ -193,17 +226,45 @@ export const ANIM_TOTAL = ANIM.PRESENT_MS + ANIM.HOLD_MS + ANIM.FLY_MS; // 1600 
 // -------------------------------------------------------------------- misc ---
 
 /**
- * Atlas de 256x256 por livro: um canvas, uma CanvasTexture, um material, um
- * draw call. O remapeamento de UV e identico para todo livro, entao ele e
- * assado uma unica vez numa BoxGeometry unitaria COMPARTILHADA — a geometria
- * de uma estante inteira sao 24 vertices.
+ * Um atlas por livro: um canvas, uma CanvasTexture, um material, um draw call.
+ * O remapeamento de UV e identico para todo livro, entao ele e assado uma unica
+ * vez numa BoxGeometry unitaria COMPARTILHADA — a geometria de uma estante
+ * inteira sao 24 vertices.
  *
- * Retangulos em pixels de canvas (origem no topo-esquerdo).
+ * O atlas e desenhado numa grade de UNITS x UNITS (as celulas e os tamanhos de
+ * fonte abaixo estao nessa unidade), mas o canvas real pode ter mais pixels: o
+ * `cover.js` aplica `ctx.scale(px / UNITS)` e tudo — inclusive o texto, que e
+ * vetorial — sai rasterizado na resolucao real. Os UVs da geometria usam UNITS
+ * e nunca mudam. Isso permite escolher a resolucao por aparelho sem tocar em
+ * nenhum outro numero.
  */
 export const COVER = {
-  SIZE: 256,
-  INSET: 0.5, // meio pixel de recuo evita puxar a cor da celula vizinha
+  UNITS: 256,
+  INSET: 0.5, // meia unidade de recuo evita puxar a cor da celula vizinha
   MAX_ANISOTROPY: 4,
+
+  /**
+   * Resolucao real do atlas da estante. No desktop a DPR 2 uma lombada tem
+   * ~470 px de tela e o texto de 16 unidades rasterizado a 256 ficava macio
+   * (1,8x de ampliacao em repouso, ~3x no zoom); a 512 fica nitido. No celular
+   * (ponteiro grosso) o livro tem ~190 px de tela e 256 basta — e cada atlas
+   * 512 custa 1,4 MB de GPU contra 0,35 MB, o que numa estante cheia (~80
+   * livros) sao 110 MB. Num monitor de DPR 1 a lombada tem ~165 css px < 256
+   * texels: 512 nao ganharia nada, entao tambem fica em 256.
+   */
+  ATLAS_PX_FINE: 512,
+  ATLAS_PX_COARSE: 256,
+
+  /**
+   * Resolucao do atlas TEMPORARIO da apresentacao (o livro grande no centro da
+   * tela ao ser cadastrado). E o unico momento em que a capa e vista de frente
+   * e ampla — 45% da altura do viewport, ~970 px de tela num 1080p a DPR 2 —,
+   * entao ela e desenhada com a capa `-L` da Open Library (~500x750) num atlas
+   * proprio, que dura 1 s e e descartado no pouso. Pagar `-L` no atlas de todos
+   * os livros seria 4x de memoria por algo que ninguem ve na estante.
+   */
+  PRESENT_PX_FINE: 1024,
+  PRESENT_PX_COARSE: 512,
 
   // Teto para UMA capa. Estava cravado no `cover.js`; veio para ca junto com o
   // disjuntor, que so faz sentido lido ao lado dele.
@@ -230,8 +291,16 @@ export const COVER = {
   BREAKER_FAILURES: 1,
   BREAKER_COOLDOWN_MS: 30000,
 
-  CELL_FRONT: { x: 0, y: 0, w: 192, h: 256 }, // capa
-  CELL_SPINE: { x: 196, y: 0, w: 32, h: 256 }, // lombada (4 px de respiro da capa)
+  /**
+   * A celula da capa tem a MESMA proporcao da face do livro (1 / DEPTH_RATIO =
+   * 0,645). Era 192x256 (0,75) e a imagem entrava com object-fit cover: uma
+   * capa `-M` tipica (180x280, 0,643) perdia ~15% na vertical no corte e ainda
+   * saia 14% mais estreita ao ser mapeada na face — dois erros somados. Com a
+   * profundidade do livro seguindo a propria capa (`rememberCoverAspect`), a
+   * imagem preenche a celula exata, sem corte nem barra.
+   */
+  CELL_FRONT: { x: 0, y: 0, w: 165, h: 256 }, // capa
+  CELL_SPINE: { x: 169, y: 0, w: 32, h: 256 }, // lombada (4 unidades de respiro da capa)
 
   // Faces de cor chapada: amostradas num PONTO unico em vez de um retangulo,
   // o que torna impossivel qualquer sangramento entre celulas em qualquer
@@ -250,6 +319,15 @@ export const COVER = {
 };
 
 export const UI = {
+  /**
+   * Tema de quem nunca escolheu. E 'dark' por decisao de produto, e NAO segue
+   * `prefers-color-scheme`: a estante de nogueira sobre o fundo azul-acinzentado
+   * e a cara do app, e o modo claro e a alternativa. Quem clicar no botao fica
+   * com a escolha em localStorage. Mudar aqui exige mudar tambem os dois
+   * `<meta>` e o `data-theme` do index.html, que existem so para a primeira
+   * pintura nao piscar.
+   */
+  DEFAULT_THEME: 'dark',
   MOBILE_MAX_W: 640,
   SEARCH_DEBOUNCE_MS: 300,
   SEARCH_MIN_CHARS: 3,
@@ -261,6 +339,11 @@ export const UI = {
 export const OL = {
   SEARCH: 'https://openlibrary.org/search.json',
   COVER: 'https://covers.openlibrary.org/b/id/',
+  // `-M` (~180x280, ~14 KB) e o que fica gravado no livro e desenhado no atlas
+  // da estante; `-L` (~500x750) so entra no atlas temporario da apresentacao,
+  // derivado da URL da `-M` na hora (`cover.js`).
+  COVER_SIZE_SHELF: 'M',
+  COVER_SIZE_PRESENT: 'L',
   // `fields` e essencial para o peso: a resposta padrao de uma busca comum tem
   // centenas de KB de dados de edicao; recortada assim fica em ~2 KB.
   FIELDS:

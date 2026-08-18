@@ -7,7 +7,7 @@ import {
   DirectionalLight,
   Group,
 } from 'three';
-import { CAM, LIGHT } from '../config.js';
+import { CAM, LIGHT, UI } from '../config.js';
 import { stepTweens, tweenCount, setWaker } from './tween.js';
 
 export const scene = new Scene();
@@ -61,7 +61,7 @@ export function initRenderer(canvas) {
   });
 
   setPixelRatioCap();
-  scene.background = new Color(LIGHT.BACKGROUND.light);
+  scene.background = new Color(LIGHT.BACKGROUND[UI.DEFAULT_THEME]);
 
   const hemi = new HemisphereLight(LIGHT.HEMI_SKY, LIGHT.HEMI_GROUND, LIGHT.HEMI_INTENSITY);
   const dir = new DirectionalLight(LIGHT.DIR_COLOR, LIGHT.DIR_INTENSITY);
@@ -100,7 +100,7 @@ export const setContextRestoreHandler = (fn) => {
 
 /** Troca so o fundo da cena. `setHex` ja interpreta o valor como sRGB. */
 export function setSceneBackground(theme) {
-  scene.background.setHex(LIGHT.BACKGROUND[theme] ?? LIGHT.BACKGROUND.light);
+  scene.background.setHex(LIGHT.BACKGROUND[theme] ?? LIGHT.BACKGROUND[UI.DEFAULT_THEME]);
   invalidate();
 }
 

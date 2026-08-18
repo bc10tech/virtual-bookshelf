@@ -12,15 +12,17 @@ let inFlight = null;
 let debounceTimer = 0;
 
 /**
- * URL da capa em tamanho M (~180x280, ~14 KB) — exatamente a resolucao que o
- * atlas usa, entao pedir -L so gastaria banda para depois reduzir.
+ * URL da capa em tamanho M (~180x280, ~14 KB): e a que fica gravada no livro e
+ * vai para o atlas da estante, onde a capa e vista de lado ou nunca. A `-L`
+ * (~500x750) so e pedida na apresentacao do livro novo, e o `cover.js` a
+ * deriva desta URL na hora — nao e persistida.
  *
  * `?default=false` e OBRIGATORIO: sem ele, uma obra sem capa devolve 200 com um
  * placeholder em branco, e o livro apareceria branco sem nenhum erro. Com ele,
  * devolve 404 limpo e o codigo cai na capa procedural.
  */
 export const coverUrl = (coverId) =>
-  coverId ? `${OL.COVER}${coverId}-M.jpg?default=false` : null;
+  coverId ? `${OL.COVER}${coverId}-${OL.COVER_SIZE_SHELF}.jpg?default=false` : null;
 
 /**
  * @param {string} term

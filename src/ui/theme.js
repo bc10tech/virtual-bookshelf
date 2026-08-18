@@ -1,3 +1,5 @@
+import { UI } from '../config.js';
+
 /**
  * Modo claro e escuro.
  *
@@ -5,6 +7,11 @@
  * 3D so muda a cor de FUNDO: os materiais da estante e dos livros sao os mesmos
  * objetos nos dois modos, e as luzes tambem — a madeira nao deveria mudar de
  * cor porque a interface mudou.
+ *
+ * Quem nunca escolheu recebe UI.DEFAULT_THEME (escuro), e NAO a preferencia do
+ * sistema: o app tem uma cara, e o outro modo e a alternativa. O index.html ja
+ * nasce com `data-theme` e os <meta> desse tema, para a primeira pintura nao
+ * piscar antes deste modulo rodar.
  */
 
 const KEY = 'vb.theme';
@@ -14,7 +21,7 @@ const read = () => {
     const v = localStorage.getItem(KEY);
     return v === 'light' || v === 'dark' ? v : null;
   } catch {
-    return null; // localStorage bloqueado: segue a preferencia do sistema
+    return null; // localStorage bloqueado: fica no padrao
   }
 };
 
@@ -31,14 +38,13 @@ const write = (v) => {
  * @param {(theme: 'light'|'dark') => void} onChange
  */
 export function createTheme(button, onChange) {
-  const media = window.matchMedia('(prefers-color-scheme: dark)');
   const icon = button.querySelector('use');
   const meta = document.querySelector('meta[name="theme-color"]');
 
-  /** null = ainda seguindo o sistema. */
+  /** null = nunca escolheu. */
   let explicit = read();
 
-  const resolved = () => explicit ?? (media.matches ? 'dark' : 'light');
+  const resolved = () => explicit ?? UI.DEFAULT_THEME;
 
   function apply() {
     const theme = resolved();
@@ -56,7 +62,7 @@ export function createTheme(button, onChange) {
     button.title = button.getAttribute('aria-label');
 
     if (meta) {
-      meta.content = getComputedStyle(root).getPropertyValue('--bg').trim() || '#ffffe3';
+      meta.content = getComputedStyle(root).getPropertyValue('--bg').trim() || meta.content;
     }
 
     onChange(theme);
@@ -66,11 +72,6 @@ export function createTheme(button, onChange) {
     explicit = resolved() === 'dark' ? 'light' : 'dark';
     write(explicit);
     apply();
-  });
-
-  // Se o usuario nunca escolheu, acompanhar a mudanca do sistema.
-  media.addEventListener('change', () => {
-    if (!explicit) apply();
   });
 
   apply();

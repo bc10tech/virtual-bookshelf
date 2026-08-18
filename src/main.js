@@ -2,7 +2,7 @@ import './styles.css';
 
 import { hasWebGL, initRenderer, resizeRenderer, setSceneBackground } from './scene/renderer.js';
 import { initControls } from './scene/camera.js';
-import { ensureFonts } from './scene/cover.js';
+import { ensureFonts, warmCover } from './scene/cover.js';
 import {
   initStage,
   addRecord,
@@ -102,6 +102,12 @@ async function boot() {
     onOpen() {
       deselect();
       sortMenu.close();
+    },
+
+    // Escolheu um resultado: as capas (-M da estante, -L da apresentacao)
+    // comecam a baixar ja, enquanto o resto do formulario e preenchido.
+    onChoose(selection) {
+      if (selection.coverUrl) warmCover(selection.coverUrl);
     },
 
     async onSubmit(record) {

@@ -16,9 +16,12 @@ import { slotPosition } from './layout.js';
  * compartilha um unico material. O que da para compartilhar e a geometria.
  */
 
-const S = COVER.SIZE;
+// UNIDADES do atlas, nao pixels: o canvas real pode ter 256, 512 ou 1024 px
+// (cover.js), mas as celulas estao na grade de UNITS e o UV e relativo a ela —
+// entao a geometria compartilhada e a mesma em qualquer resolucao.
+const S = COVER.UNITS;
 
-/** Retangulo do atlas -> retangulo de UV (com meio pixel de recuo). */
+/** Retangulo do atlas -> retangulo de UV (com meia unidade de recuo). */
 function uvRect(cell) {
   const i = COVER.INSET;
   return {
