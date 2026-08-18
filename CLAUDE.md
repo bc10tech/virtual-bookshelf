@@ -1,9 +1,10 @@
 # virtual-bookshelf
 
 Estante de livros virtual em 3D (Three.js + JS puro no cliente, Express +
-MongoDB no servidor). Sem framework, sem bundler além do Vite. Peso e
-responsividade são os critérios que decidem toda escolha técnica — veja
-`README.md` para o resumo do produto e o orçamento de bytes.
+MongoDB no servidor). Sem framework, sem bundler além do Vite. O projeto é
+para uso pessoal (eu e poucos amigos): o critério que decide é a experiência
+de uso; peso e responsividade continuam sendo bom senso, não juiz — veja
+`README.md` para o resumo do produto e `steps.md` para o rumo.
 
 ## Rodando localmente
 
@@ -22,10 +23,12 @@ src/config.js       fonte única de TODO número: coordenadas da estante, curva
                      páginas→espessura, tamanhos de fonte do canvas, tempos de
                      animação, cores. Mudar um número é sempre aqui.
 src/scene/          Three.js: renderer.js (loop sob demanda), camera.js
-                     (OrbitControls), shelf.js (estante procedural), book.js
-                     (mesh + cache de textura), cover.js (atlas da capa),
-                     layout.js (empacotamento + editionKey), stage.js
-                     (syncScene: reconcilia a cena com o estado)
+                     (OrbitControls), shelf.js (estante procedural), wood.js
+                     (textura de madeira procedural), book.js (mesh + cache de
+                     textura), cover.js (atlas da capa, disjuntor, -L da
+                     apresentação), layout.js (empacotamento + editionKey +
+                     proporção da capa), stage.js (syncScene: reconcilia a
+                     cena com o estado)
 src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
                      paginador, menu de ordenação, tema
 src/data/            api.js (CRUD), search.js (Open Library), sort.js
@@ -102,9 +105,26 @@ prateleiras, o que o arquivo não fazia.
 - **Fontes são auto-hospedadas e variáveis** (`public/fonts/`, hoje Bitter +
   Karla). Preferir sempre `wght@min..max` no Google Fonts a baixar
   instâncias estáticas — metade dos arquivos, mesma cobertura de peso.
-- **`steps.md` fica fora do git** (`.gitignore`) por pedido explícito. Ele
-  guarda o roteiro para virar produto real (auth, Atlas, deploy, segurança);
-  atualizar conforme o projeto avança, mas nunca versionar.
+- **O atlas é desenhado em unidades (`COVER.UNITS` = 256), não em pixels.**
+  Células e tamanhos de fonte do `config.js` estão nessa grade; o canvas real
+  (`ATLAS_PX_*`, `PRESENT_PX_*`) é escolhido por ponteiro/DPR e um `ctx.scale`
+  cuida do resto. Os UVs da geometria compartilhada usam as unidades e nunca
+  mudam com a resolução.
+- **A profundidade do livro segue a proporção da capa** (por `editionKey`, via
+  `rememberCoverAspect` em `layout.js`), e só é conhecida depois do download.
+  É seguro porque `depth` nunca entra no empacotamento — só `thickness`. Quem
+  cria mesh precisa reler as dimensões depois da textura (`refreshDims` no
+  `stage.js`). A proporção vem **só** da capa `-M`, nunca da `-L` da
+  apresentação: as duas diferem por arredondamento, e 1 mm de diferença
+  dispararia um reflow de nada no próximo `syncScene`.
+- **Download que não é o atlas da estante passa por `loadImageQuiet`**
+  (`cover.js`): pré-aquecimento ao escolher um resultado e a capa `-L` da
+  apresentação. Ele não toca no disjuntor — com `BREAKER_FAILURES = 1`, uma
+  `-L` lenta pelo `loadImage` normal abriria a porta e apagaria as `-M` de uma
+  estante saudável por 30 s.
+- **`steps.md` é o documento de rumo do projeto e é versionado** (deixou de
+  ficar no `.gitignore` em agosto de 2026, junto com o pivô para app pessoal).
+  Atualizar conforme o projeto avança.
 
 ## Convenções
 

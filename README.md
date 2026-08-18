@@ -52,7 +52,7 @@ server/             Express + driver oficial do MongoDB (sem Mongoose)
 scripts/db.mjs      aplica o schema no banco e migra o acervo
 src/
   config.js         TODOS os números do projeto moram aqui
-  scene/            three.js: renderer, câmera, estante, livros, capas, tweens
+  scene/            three.js: renderer, câmera, estante, madeira, livros, capas, tweens
   data/             acesso à API, busca na Open Library, ordenação
   ui/               painel, estrelas, paginador, cartão, menu de ordem, tema
 public/fonts/       Bitter e Karla (SIL OFL), variáveis e auto-hospedadas
@@ -95,7 +95,8 @@ requisições. As escolhas que sustentam isso:
 | **Vite** | tree-shaking derruba o three.js de ~330 KB para ~123 KB gzip. Só devDependency: não vai um byte para o cliente. |
 | **Estante por código** | 0 KB de asset, 0 KB de loader, 3 draw calls. |
 | **Uma BoxGeometry compartilhada** | todos os livros usam a mesma geometria, com os UVs remapeados uma vez para as células do atlas. A estante inteira são 24 vértices. |
-| **Um atlas por livro** | capa, lombada, contracapa e miolo no mesmo canvas 256². Um livro = 1 textura = 1 material = 1 draw call. |
+| **Um atlas por livro** | capa, lombada, contracapa e miolo no mesmo canvas — desenhado numa grade de 256 unidades, com 512 px reais no desktop (lombada legível) e 256 no celular. Um livro = 1 textura = 1 material = 1 draw call. Na apresentação de um livro novo entra por 1 s uma textura temporária com a capa `-L`, descartada no pouso. |
+| **Estante com madeira procedural** | a textura de madeira é gerada num canvas no boot: 0 KB de download, mesmos 3 draw calls, mesmo programa de shader dos livros. |
 | **Cache de material por livro** | ordenar a estante só recalcula posições: nenhum atlas é redesenhado e nenhuma textura sobe para a GPU de novo. |
 | **Render sob demanda** | parado, não existe `requestAnimationFrame` pendente: zero CPU, zero GPU, zero bateria. |
 | **Uma estante por vez** | trocar de estante no paginador descarta as texturas da anterior, então a memória de GPU não cresce com o acervo. |
@@ -116,9 +117,10 @@ páginas (`number_of_pages_median`) chega na mesma requisição da busca, então
 espessura da lombada não custa nenhuma chamada extra.
 
 Cada livro é um documento em `virtual_bookshelf.books`. Nada de geometria é
-guardado: a espessura vem das páginas, a altura e a profundidade de um hash
-determinístico da **edição** (`olKey`, ou título+autor em cadastro manual), e a
-posição do empacotamento por largura. Recarregar reproduz exatamente a mesma
+guardado: a espessura vem das páginas, a altura de um hash determinístico da
+**edição** (`olKey`, ou título+autor em cadastro manual), a profundidade da
+proporção real da capa (ou do hash, quando não há capa), e a posição do
+empacotamento por largura. Recarregar reproduz exatamente a mesma
 estante — e dois exemplares do mesmo livro ficam geometricamente idênticos, que
 é justamente o motivo de a chave ser a obra e não o `_id` do registro.
 
@@ -174,5 +176,6 @@ Nada disso vai para o build de produção.
 
 ## Próximos passos
 
-Login, MongoDB Atlas, segurança, deploy e o resto do caminho para virar um site
-de verdade estão em `steps.md` (que não é versionado).
+O projeto é para uso pessoal — eu e poucos amigos, cada um com a sua estante e
+vendo a dos outros. Login com Google, perfil e amigos, e o polimento da
+interface estão em `steps.md`, que é o documento de rumo do projeto.
