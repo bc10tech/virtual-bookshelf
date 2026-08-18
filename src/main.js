@@ -21,7 +21,9 @@ import { createPager } from './ui/pager.js';
 import { createDetails } from './ui/details.js';
 import { createSortMenu } from './ui/sortMenu.js';
 import { createTheme } from './ui/theme.js';
+import { createSplash } from './ui/splash.js';
 import * as api from './data/api.js';
+import { me } from './data/user.js';
 
 const $ = (id) => document.getElementById(id);
 const live = $('live');
@@ -52,8 +54,15 @@ function noWebGL() {
 async function boot() {
   const canvas = $('scene');
 
+  // Primeira coisa do boot: a splash ja esta na tela desde o HTML, e daqui em
+  // diante ela e a tela de carregamento. `me()` corre solto — o titulo espera
+  // por ele so ate o teto do config.
+  const splash = createSplash($('splash'));
+  splash.intro(me());
+
   if (!hasWebGL()) {
     noWebGL();
+    await splash.leave(Promise.resolve());
     return;
   }
 
@@ -153,17 +162,32 @@ async function boot() {
     panel.openForEdit(rec);
   };
 
-  let initial = [];
-  try {
-    initial = await api.list();
-  } catch (err) {
-    toast(
-      'Não consegui falar com o servidor. Confira se o Docker e o `npm run dev` estão de pé.',
-    );
-    console.error('[app]', err);
-  }
+  // A splash espera por esta promise, entao ela NAO pode rejeitar: um erro aqui
+  // vira toast (que aparece por cima da splash, z-index 60 contra 50) e a
+  // abertura segue seu curso ate o fim.
+  const ready = (async () => {
+    let records = [];
+    try {
+      records = await api.list();
+    } catch (err) {
+      toast(
+        'Não consegui falar com o servidor. Confira se o Docker e o `npm run dev` estão de pé.',
+      );
+      console.error('[app]', err);
+    }
 
-  await initStage(initial);
+    try {
+      await initStage(records);
+    } catch (err) {
+      toast('Algo quebrou ao desenhar a estante. Veja o console para o detalhe.');
+      console.error('[app]', err);
+    }
+    return records;
+  })();
+
+  await splash.leave(ready);
+
+  const initial = await ready;
   if (initial.length) {
     announce(`${initial.length} ${initial.length === 1 ? 'livro' : 'livros'} na estante.`);
   }
@@ -179,6 +203,7 @@ async function boot() {
  *   __shelf.seed(12, 600)   -> 12 livros de 600 paginas
  *   __shelf.stats()         -> draw calls, texturas, estantes
  *   __shelf.wipe()          -> limpa o banco
+ *   __shelf.splash({ nickname: 'Bruno', gender: 'm' })  -> reprisa a abertura
  */
 async function installDebugHooks({ details, panel }) {
   const { renderer, booksGroup, camera, scene: sceneRef } = await import(
@@ -251,6 +276,39 @@ async function installDebugHooks({ details, panel }) {
       tema: document.documentElement.dataset.theme,
     }),
     sort: (by, dir = 'asc') => setSort({ by, dir }),
+    /**
+     * Reprisa a abertura com um usuario inventado — a unica forma de ver a
+     * personalizacao antes de o login existir. O markup original ja foi
+     * removido do DOM na saida, entao aqui ele e remontado igual.
+     */
+    async splash(user = null) {
+      document.getElementById('splash')?.remove();
+
+      const el = document.createElement('div');
+      el.id = 'splash';
+      el.className = 'splash';
+      const lockup = document.createElement('div');
+      lockup.className = 'splash__lockup';
+      lockup.hidden = true;
+      const logo = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      logo.setAttribute('class', 'splash__logo');
+      logo.setAttribute('aria-hidden', 'true');
+      const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      use.setAttribute('href', '#i-logo');
+      logo.append(use);
+      const reveal = document.createElement('div');
+      reveal.className = 'splash__reveal';
+      const h1 = document.createElement('h1');
+      h1.className = 'splash__title';
+      reveal.append(h1);
+      lockup.append(logo, reveal);
+      el.append(lockup);
+      document.body.append(el);
+
+      const preview = createSplash(el);
+      preview.intro(Promise.resolve(user));
+      await preview.leave(Promise.resolve());
+    },
     /** Abre o cartao numa ancora arbitraria — testa o grampo contra a viewport. */
     card: (index, x, y) => details.show(allRecords()[index], { x, y }),
     edit: (index) => panel.openForEdit(allRecords()[index]),
@@ -278,5 +336,8 @@ async function installDebugHooks({ details, panel }) {
 
 boot().catch((err) => {
   console.error('[app] falha no boot', err);
+  // Ultimo recurso: se o boot morreu antes do `splash.leave`, o overlay ficaria
+  // na frente do erro para sempre.
+  document.getElementById('splash')?.remove();
   toast('Algo quebrou ao iniciar a estante. Veja o console para o detalhe.');
 });

@@ -191,6 +191,10 @@ funcionar igual no celular.** A recomendação:
   role, createdAt, lastSeenAt }`. `handle` derivado da parte local do e-mail
   (`bcesar97.bc` → `bcesar97-bc`), único, editável depois no perfil. Foto do
   Google guardada como URL — é servida por eles, não passa pelo nosso host.
+  Ganha também `nickname` (Apelido, editável no perfil — é o que a splash usa
+  para personalizar o título) e `gender` (`'m'|'f'|null`, também do perfil). O
+  limite de tamanho do `nickname` mora em `server/limits.js`, como todo número
+  compartilhado entre zod e `$jsonSchema` — nunca repetido nos dois.
 
 - **O que muda no código que já existe** — o ponto de contato é pequeno e já
   estava marcado:
@@ -204,6 +208,11 @@ funcionar igual no celular.** A recomendação:
     só a página corrente) e o `main.js` mostra a tela de entrada — um
     `<section>` com nome do app, uma linha de explicação e o botão "Entrar com
     Google". `GET /api/v1/users/me` é chamado antes do `api.list()`.
+    **Já existe consumidor**: `src/data/user.js` (`me()`) chama essa rota para
+    personalizar o título da splash e hoje trata *qualquer* erro (404, porque
+    a rota não existe ainda) como `null`. Quando a rota nascer com `401` para
+    visitante, `401 -> null` continua sendo a resposta certa — não precisa
+    mudar `user.js`, só a splash passa a mostrar o nome de verdade.
   - **Rotas de `/auth` registradas antes do fallback do SPA**
     (`server/index.js:50`, o `app.get(/^(?!\/api\/).*/)`), senão o callback
     recebe `index.html`.
@@ -265,7 +274,17 @@ A ordem aqui é a do que dá mais prazer por hora investida.
   capa); apresentação nítida com a capa `-L`, só durante o 1 s em que ela é
   vista de frente; textura de madeira procedural na estante (0 KB de asset,
   3 draw calls iguais); lombada legível com o atlas em 512 px no desktop.
-- **Cabeçalho/perfil** (item 4) e a tela de entrada.
+- ✅ **Splash de abertura** (`src/ui/splash.js`): logo entra, o título "Estante
+  Virtual" (personalizado com o apelido quando há usuário) emerge de trás dela
+  enquanto desliza para a esquerda, e o conjunto inteiro sai revelando a
+  estante — tudo em CSS, sem lib de animação. É também a tela de carregamento:
+  só sai quando o título terminou **e** a estante está pronta. Refinamento
+  futuro: hoje `ready` espera o `initStage` inteiro (estante montada **e**
+  todas as capas baixadas); o dia em que isso pesar, trocar para esperar só a
+  ESTRUTURA montada (livros posicionados, capas chegando por trás da estante
+  já revelada) — o teto `MAX_WAIT_MS` já cobre servidor lento nos dois casos.
+- **Cabeçalho/perfil** (item 4) e a tela de entrada do login (item 3) — essa é
+  a tela pós-splash para quem não está autenticado, não a splash em si.
 - **Cartão de detalhes** mais rico: capa grande, datas em texto ("lido em 12
   dias, em março"), estrelas, review com tipografia de página.
 - **Painel de cadastro no celular**: hoje funciona; o que falta é fluidez —

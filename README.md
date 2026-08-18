@@ -39,10 +39,18 @@ npm run build && npm start
 Depois do build, o próprio Express passa a servir o `dist/`, e a porta 3000
 atende o site inteiro.
 
+```bash
+npm test
+```
+
+Roda `node --test` (sem dependência nova) sobre `test/`. Hoje cobre só
+`splashTitle` — é a única peça da splash sem DOM nem three.js, e portanto a
+única fácil de testar no Node puro.
+
 ## Como está montado
 
 ```
-index.html          casca: canvas, FAB, painel-formulário, chips das estantes
+index.html          casca: canvas, FAB, painel-formulário, chips das estantes, splash de abertura
 server/             Express + driver oficial do MongoDB (sem Mongoose)
   db.js             conexão única; timeout e pool conforme o banco é local ou não
   limits.js         os limites que as DUAS validações dividem
@@ -52,10 +60,12 @@ server/             Express + driver oficial do MongoDB (sem Mongoose)
 scripts/db.mjs      aplica o schema no banco e migra o acervo
 src/
   config.js         TODOS os números do projeto moram aqui
+  assets/           fonte dos assets vetorizados (hoje só a logo; não vai pro build)
   scene/            three.js: renderer, câmera, estante, madeira, livros, capas, tweens
-  data/             acesso à API, busca na Open Library, ordenação
-  ui/               painel, estrelas, paginador, cartão, menu de ordem, tema
-public/fonts/       Bitter e Karla (SIL OFL), variáveis e auto-hospedadas
+  data/             acesso à API, busca na Open Library, ordenação, usuário (user.js)
+  ui/               painel, estrelas, paginador, cartão, menu de ordem, tema, splash de abertura
+public/             fonts/ (Bitter e Karla, SIL OFL) e favicon.svg (mesmo traço da logo)
+test/               node --test — hoje só splashTitle.js
 ```
 
 **Não há nenhum arquivo de modelo 3D.** A estante nasceu de um `bookshelf.obj`
@@ -80,7 +90,10 @@ Duas famílias, com uma divisão de responsabilidade estrita:
   capa desenhadas no canvas, a caixa de **Review** (para o texto parecer uma
   página sendo escrita, não mais um campo de formulário) e o **cartão de
   detalhes** inteiro. A única exceção dentro do cartão é o botão "Editar", que
-  volta para a sans por ser controle de interface.
+  volta para a sans por ser controle de interface. O título da splash de
+  abertura ("Estante Virtual [do/da/de {apelido}]") também é Bitter — é o nome
+  do app, não um rótulo de interface — e por isso nenhuma fonte nova entrou
+  para ela.
 
 As duas são **fontes variáveis**: o descritor `font-weight: 400 700` é um
 intervalo, e um arquivo por família cobre os dois pesos e todos os
@@ -103,6 +116,7 @@ requisições. As escolhas que sustentam isso:
 | **Tema por tokens CSS** | a cena só troca a cor de fundo; materiais e luzes são os mesmos objetos nos dois modos. |
 | **Fontes variáveis** | 2 arquivos em vez de 4, e o eixo de peso 400–700 inteiro sai de graça. |
 | **Sem GSAP, sem framework, sem datepicker, sem icon font** | um tween de 50 linhas, ~10 elementos no DOM, `<input type="date">` nativo e `<symbol>` SVG inline. |
+| **Splash em CSS puro** | as três fases (logo, título, saída) são classes + `@keyframes`/`transition`; as durações vêm do `config.js`, nada de lib de animação. A logo é um `<symbol>` SVG inline (~3,4 KB), vetorizada do PNG original uma única vez — não um asset servido. |
 | **Fonte auto-hospedada** | o cache do browser é particionado por site desde 2020, então o CDN do Google só custaria 2 handshakes e um CSS bloqueante. |
 
 Dependências totais: `three`, `express`, `mongodb` e `zod`, mais `vite` e
@@ -170,6 +184,7 @@ __shelf.sort('pages','desc')  // troca a ordenação
 __shelf.card(0, x, y)      // abre o cartão numa âncora arbitrária
 __shelf.edit(0)            // abre o painel em modo edição
 __shelf.wipe()             // limpa o banco
+__shelf.splash({ nickname: 'Bruno', gender: 'm' })  // reprisa a abertura
 ```
 
 Nada disso vai para o build de produção.

@@ -6,7 +6,7 @@
 
 const BASE = '/api/v1/books';
 
-async function request(url, options) {
+export async function request(url, options) {
   let res;
   try {
     res = await fetch(url, options);

@@ -223,6 +223,20 @@ export const ANIM = {
 
 export const ANIM_TOTAL = ANIM.PRESENT_MS + ANIM.HOLD_MS + ANIM.FLY_MS; // 1600 ms
 
+/**
+ * Splash de abertura (`src/ui/splash.js`). Ela e tambem a tela de carregamento:
+ * so sai quando o titulo terminou E a estante ficou pronta (ou o teto estourou).
+ * O CSS le as tres primeiras por `--splash-*-ms`; as outras sao so do JS.
+ */
+export const SPLASH = {
+  LOGO_MS: 600, // fase 1: pop-in da logo sozinha, no centro da tela
+  TITLE_MS: 500, // fase 2: a logo desliza p/ esquerda e o titulo sai de tras dela
+  HOLD_MS: 500, // pausa com o conjunto parado e legivel
+  EXIT_MS: 450, // fase 3: a splash inteira sai pela esquerda
+  PREP_MS: 1200, // teto para o usuario + a Bitter antes da fase 2
+  MAX_WAIT_MS: 4000, // teto para a estante, contado do inicio: passou, sai assim mesmo
+};
+
 // -------------------------------------------------------------------- misc ---
 
 /**

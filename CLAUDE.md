@@ -14,7 +14,8 @@ docker compose up -d && npm install && npm run dev
 
 Interface em `:5173` (Vite, proxy de `/api` para o Express), API em `:3000`.
 `npm run build && npm start` serve tudo pela porta 3000. `npm run dev -- --host`
-para testar em celular na rede local.
+para testar em celular na rede local. `npm test` roda `node --test` sobre
+`test/` (zero dependência nova).
 
 ## Arquitetura
 
@@ -30,14 +31,20 @@ src/scene/          Three.js: renderer.js (loop sob demanda), camera.js
                      proporção da capa), stage.js (syncScene: reconcilia a
                      cena com o estado)
 src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
-                     paginador, menu de ordenação, tema
-src/data/            api.js (CRUD), search.js (Open Library), sort.js
+                     paginador, menu de ordenação, tema, splash.js (abertura,
+                     3 fases em CSS) + splashTitle.js (texto puro, testado)
+src/data/            api.js (CRUD), search.js (Open Library), sort.js, user.js
+                     (usuário da sessão; hoje sempre `null`, rota do login
+                     ainda não existe)
+src/assets/          fonte dos assets vetorizados (hoje só a logo original em
+                     PNG; não entra no build)
 server/              Express + driver oficial do MongoDB (sem Mongoose):
                      validate.js valida a entrada (zod), schema.js valida o
                      documento gravado ($jsonSchema), limits.js é o que os dois
                      dividem, db.js/books.js o resto
 scripts/db.mjs       check/setup/migrate — aplica o schema no banco e migra o
                      acervo para o Atlas
+test/                node --test — hoje só splashTitle.js
 ```
 
 Não existe `bookshelf.obj`/`.mtl` no repo. A estante é gerada por código a
@@ -62,6 +69,13 @@ prateleiras, o que o arquivo não fazia.
 - **Renderização é sob demanda.** Nunca adicionar um `requestAnimationFrame`
   contínuo; toda mudança visual passa por `invalidate()` (`renderer.js`). Ao
   mexer em algo que muda a cena, verificar que ainda dá 0 frames em repouso.
+- **A splash (`splash.js`) é a tela de carregamento, e é só CSS.** Sem
+  `requestAnimationFrame`, sem `tween.js` — classes + `@keyframes`/`transition`,
+  durações do `config.js`. Ela só sai quando o título terminou **e** a promise
+  `ready` do `main.js` resolveu (ou o teto `MAX_WAIT_MS` estourou); por isso
+  `ready` **nunca pode rejeitar** — um erro nela deixaria a splash presa para
+  sempre. `z-index: 50`, abaixo dos 60 do toast, de propósito: se o servidor
+  cair, o aviso aparece por cima da própria splash.
 - **`syncScene()` é assíncrono e reentrante — todo mesh nasce por `pendingIds`.**
   Ele espera o download das capas no meio do caminho, e só escreve em `meshById`
   *depois*. Sem o `pendingIds` (`stage.js`), um segundo `syncScene` que entre
@@ -142,4 +156,5 @@ prateleiras, o que o arquivo não fazia.
 
 Com `npm run dev`, o console do browser expõe `__shelf` (não entra no build de
 produção): `__shelf.stats()`, `.layout()`, `.camera()`, `.seed(n, páginas)`,
-`.sort(criterio, direção)`, `.card(i, x, y)`, `.edit(i)`, `.wipe()`.
+`.sort(criterio, direção)`, `.card(i, x, y)`, `.edit(i)`, `.wipe()`,
+`.splash({ nickname, gender })` (reprisa a abertura com um usuário simulado).

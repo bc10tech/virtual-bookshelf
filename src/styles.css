@@ -1059,6 +1059,110 @@ textarea:user-invalid {
   color: var(--danger);
 }
 
+/* ----------------------------------------------------------------- splash ---
+   Tela de abertura (`src/ui/splash.js`), que e tambem a de carregamento: cobre
+   a primeira pintura e sai revelando a estante ja montada.
+
+   As duracoes vem todas do `config.js` (bloco SPLASH), escritas pelo JS em
+   `--splash-*-ms`. As `var()` abaixo estao SEM fallback de proposito: enquanto
+   o JS nao escreve, a declaracao inteira e invalida e nada anima cedo demais. */
+
+.splash {
+  position: fixed;
+  inset: 0;
+  /* Acima da interface (painel 40, cartao 45) e ABAIXO do toast (60): se o
+     servidor estiver fora, o aviso de erro aparece por cima da propria splash. */
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  /* Safe areas por padding, nunca por altura em `vh`: a barra de URL do iOS
+     mudaria a altura no meio da animacao. */
+  padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) var(--safe-b)
+    env(safe-area-inset-left, 0px);
+  background: var(--bg);
+  color: var(--ink);
+
+  --splash-logo: clamp(88px, 22vmin, 168px);
+  --splash-gap: clamp(12px, 3vmin, 24px);
+  /* Largura do titulo, medida pelo JS depois que a fonte carrega. */
+  --splash-title-w: 0px;
+}
+
+/* O conjunto nasce deslocado para a DIREITA pela metade do que o titulo vai
+   ocupar — assim a logo comeca no centro exato da tela. Zerar isso na fase 2 e
+   o que faz a logo deslizar para a esquerda enquanto o texto emerge: um
+   movimento so, sem posicionamento absoluto. */
+.splash__lockup {
+  display: flex;
+  align-items: center;
+  gap: var(--splash-gap);
+  max-width: 100%;
+  transform: translateX(calc((var(--splash-title-w) + var(--splash-gap)) / 2));
+}
+
+.splash__logo {
+  flex: none;
+  width: var(--splash-logo);
+  height: var(--splash-logo);
+  /* Disco da cor do fundo (invisivel contra ele) + z-index: sem os dois o
+     titulo apareceria pelos vazios do anel e pelos furos entre os livros
+     enquanto passa por tras da logo. */
+  background: var(--bg);
+  border-radius: 50%;
+  position: relative;
+  z-index: 1;
+  animation: pop-in var(--splash-logo-ms) cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* A caixa deste elemento E o recorte: a margem negativa leva a borda esquerda
+   do `clip-path` ao CENTRO da logo, e o padding devolve o espaco para que o
+   titulo, parado, fique depois dela. O trecho do caminho entre o centro e a
+   borda direita da logo fica escondido pelo disco. O recorte vertical e
+   negativo para nao cortar acentos nem descidas. */
+.splash__reveal {
+  min-width: 0;
+  margin-left: calc((var(--splash-logo) / -2) - var(--splash-gap));
+  padding-left: calc((var(--splash-logo) / 2) + var(--splash-gap));
+  clip-path: inset(-0.5em 0);
+}
+
+.splash__title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: clamp(1.4rem, 5vw + 0.5rem, 2.6rem);
+  line-height: 1.2;
+  /* No celular obriga a quebra em duas linhas (ela cai no espaco antes do
+     sufixo); no desktop sobra largura e o titulo fica numa linha so. O JS fixa
+     a largura da linha mais larga depois, para o conjunto ficar centrado. */
+  max-width: calc(100vw - var(--splash-logo) - 4 * var(--splash-gap));
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  /* Comeca inteiro a esquerda do recorte, escondido atras da logo. */
+  transform: translateX(calc(-100% - (var(--splash-logo) / 2) - var(--splash-gap)));
+}
+
+.splash__accent {
+  color: var(--accent);
+}
+
+.splash__lockup,
+.splash__title {
+  transition: transform var(--splash-title-ms) cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.splash.is-titled .splash__lockup,
+.splash.is-titled .splash__title {
+  transform: none;
+}
+
+.splash.is-leaving {
+  transform: translateX(-100%);
+  pointer-events: none;
+  transition: transform var(--splash-exit-ms) cubic-bezier(0.65, 0, 0.35, 1);
+}
+
 /* ----------------------------------------------------------------- mobile --- */
 
 @media (max-width: 640px) {
@@ -1125,5 +1229,13 @@ textarea:user-invalid {
 
   .panel {
     transition: visibility 0s !important;
+  }
+
+  /* Mesmo tratamento do painel: sem deslizamento, a saida vira um fade — o
+     `!important` e preciso porque a regra generica acima zera a duracao. */
+  .splash.is-leaving {
+    transform: none;
+    opacity: 0;
+    transition: opacity var(--splash-exit-ms) ease !important;
   }
 }
