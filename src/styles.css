@@ -575,6 +575,7 @@ input[type='search'],
 input[type='date'],
 input[type='number'],
 input[type='email'],
+input[type='text'],
 textarea {
   width: 100%;
   min-height: 44px; /* alvo de toque confortavel */
@@ -1371,6 +1372,229 @@ textarea:user-invalid {
   color: var(--ink-faint);
 }
 
+/* ----------------------------------------------------------------- perfil ---
+   Dialogo de Perfil (`src/ui/profile.js`): a previa do titulo da abertura e o
+   grupo de genero. */
+
+/* A previa e o nome do app, nao um rotulo: serifada como a splash, e o sufixo
+   na cor de acento (`.splash__accent`, global). */
+.profile__preview {
+  margin: 2px 0 0;
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  min-height: 1.5em;
+  overflow-wrap: anywhere;
+}
+
+.choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 12px 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--field-bg, #fff);
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.choice input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  color: var(--ink);
+}
+
+.choice:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.hint code {
+  font-family: var(--font-sans);
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: var(--surface-2);
+  color: var(--ink-soft);
+}
+
+/* ----------------------------------------------------------------- pessoas ---
+   Lista do dialogo de Amigos (`src/ui/friends.js`): cada item e um botao que
+   abre a estante da pessoa. */
+
+.people {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.people__item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 56px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.people__item:hover {
+  background: var(--surface-2);
+}
+
+.people__pic {
+  flex: none;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: var(--surface-2) center / cover no-repeat;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+.people__pic .icon {
+  width: 20px;
+  height: 20px;
+  color: var(--ink-faint);
+}
+
+.people__pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.people__who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.people__name {
+  font-size: 0.95rem;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__meta {
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.people__empty {
+  margin: 0;
+  padding: 6px 4px;
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+}
+
+/* ------------------------------------------------------------------- selo ---
+   "Estante de Fulano", no topo, enquanto se ve a estante de outra pessoa. E um
+   botao: tocar volta para a minha. Quando aparece, o paginador desce. */
+
+.owner-badge {
+  position: fixed;
+  top: max(16px, env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(72vw, 380px);
+  min-height: 44px;
+  padding: 4px 14px 4px 4px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--ink);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  z-index: 26;
+}
+
+.owner-badge:hover {
+  background: var(--surface-2);
+}
+
+.owner-badge__pic {
+  flex: none;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.owner-badge__pic img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.owner-badge__text {
+  min-width: 0;
+  display: grid;
+  line-height: 1.2;
+  text-align: left;
+}
+
+.owner-badge__name {
+  font-family: var(--font-serif);
+  font-size: 0.95rem;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.owner-badge__back {
+  font-size: 0.7rem;
+  color: var(--ink-faint);
+}
+
+/* O selo e o paginador dividem o topo-centro: com o selo visivel, os chips
+   descem para baixo dele. */
+body:has(.owner-badge:not([hidden])) .pager {
+  top: calc(max(16px, env(safe-area-inset-top, 0px)) + 54px);
+}
+
 /* ----------------------------------------------------------------- mobile --- */
 
 @media (max-width: 640px) {
@@ -1413,6 +1637,7 @@ textarea:user-invalid {
   input[type='date'],
   input[type='number'],
   input[type='email'],
+  input[type='text'],
   textarea {
     font-size: 16px;
   }

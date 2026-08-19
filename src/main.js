@@ -15,6 +15,7 @@ import {
   setOnCasesChanged,
   bindPicking,
   deselect,
+  setRecords,
 } from './scene/stage.js';
 import { createPanel } from './ui/panel.js';
 import { createPager } from './ui/pager.js';
@@ -22,11 +23,15 @@ import { createDetails } from './ui/details.js';
 import { createSortMenu } from './ui/sortMenu.js';
 import { createTheme } from './ui/theme.js';
 import { createSplash } from './ui/splash.js';
-import { createGate, authFlagFromSearch } from './ui/gate.js';
+import { createGate } from './ui/gate.js';
 import { createAccountMenu } from './ui/account.js';
 import { createInvitesDialog } from './ui/invites.js';
+import { createProfileDialog } from './ui/profile.js';
+import { createFriendsDialog } from './ui/friends.js';
+import { bootParams } from './bootParams.js';
 import * as api from './data/api.js';
 import * as invitesApi from './data/invites.js';
+import * as usersApi from './data/users.js';
 import { me, logout } from './data/user.js';
 
 const $ = (id) => document.getElementById(id);
@@ -68,10 +73,11 @@ async function boot() {
   const session = me();
   splash.intro(session);
 
-  // O servidor volta do login com `?auth=...` quando algo nao deu certo. Le e
-  // limpa da URL antes de qualquer coisa: um F5 nao deve repetir o aviso.
-  const flag = authFlagFromSearch(location.search);
-  if (flag) history.replaceState(null, '', location.pathname);
+  // Tudo o que a URL diz ao boot (`?auth=`, `?welcome=`, `?u=`) e lido UMA vez
+  // e a query inteira e apagada: um F5 nao repete o aviso nem reabre o Perfil.
+  // O `?u=` e reescrito pelo modo leitura quando ele entra de fato.
+  const { auth: flag, welcome, owner } = bootParams(location.search);
+  if (location.search) history.replaceState(null, '', location.pathname);
 
   if (!hasWebGL()) {
     noWebGL();
@@ -124,7 +130,10 @@ async function boot() {
 
   // A ancora e o ponto da tela onde o usuario clicou: o cartao nasce junto do
   // livro, e se grampeia sozinho para nunca ficar cortado.
-  setOnSelect((rec, anchor) => (rec ? details.show(rec, anchor) : details.hide()));
+  // Na estante de outra pessoa o cartao sai sem "Editar" (a review, sim).
+  setOnSelect((rec, anchor) =>
+    rec ? details.show(rec, anchor, { editable: !viewing }) : details.hide(),
+  );
 
   const pager = createPager($('pager'), (i) => {
     details.hide();
@@ -143,24 +152,132 @@ async function boot() {
     },
   });
 
+  // Os tres dialogos do canto da conta ocupam o mesmo lugar: abrir um fecha os
+  // outros (e o painel, o popover de ordenacao e a selecao).
+  const closeOthers = (except) => {
+    deselect();
+    sortMenu.close();
+    panel?.close({ returnFocus: false });
+    for (const d of [invites, profile, friends]) {
+      if (d && d !== except) d.close({ returnFocus: false });
+    }
+  };
+
   // Convites: so o admin tem o dialogo (e o item no menu). Para os outros o
   // objeto nem existe, e o servidor responde 403 de todo jeito.
   const invites =
     user.role === 'admin'
       ? createInvitesDialog($('invites'), {
           ...invitesApi,
-          onOpen() {
-            deselect();
-            sortMenu.close();
-            panel?.close({ returnFocus: false });
-          },
+          onOpen: () => closeOthers(invites),
         })
       : null;
+
+  const profile = createProfileDialog($('profile'), {
+    user,
+    save: usersApi.updateMe,
+    onOpen: () => closeOthers(profile),
+    onSaved: () => announce('Perfil salvo.'),
+  });
+
+  const friends = createFriendsDialog($('friends'), {
+    me: user,
+    list: usersApi.listUsers,
+    onOpen: () => closeOthers(friends),
+    onView: (person) => viewShelf(person).catch((err) => console.error('[app]', err)),
+  });
+
+  // ---- modo leitura: a estante de outra pessoa -----------------------------
+  //
+  // `viewing` e quem esta sendo visto (null = a minha). Trocar de dono e
+  // `setRecords` — o conjunto inteiro passa pelo `syncScene`. `viewSeq` descarta
+  // uma resposta atrasada quando se troca duas vezes depressa: a ultima escolha
+  // e a que vale, nao a que a rede entregar por ultimo.
+  let viewing = null;
+  let viewSeq = 0;
+  const badge = $('owner-badge');
+  const badgeName = badge.querySelector('.owner-badge__name');
+  const badgePic = badge.querySelector('.owner-badge__pic');
+
+  function showBadge(person) {
+    badgePic.replaceChildren();
+    if (person?.picture) {
+      const img = document.createElement('img');
+      img.alt = '';
+      img.referrerPolicy = 'no-referrer';
+      img.src = person.picture;
+      img.addEventListener('error', () => img.remove());
+      badgePic.append(img);
+    }
+    // Sem foto o circulo vazio so ocuparia espaco.
+    badgePic.hidden = !person?.picture;
+    badgeName.textContent = person
+      ? `Estante de ${person.nickname || person.name || person.handle}`
+      : '';
+    badge.hidden = !person;
+  }
+
+  /** Entra (person) ou sai (null) do modo leitura com os registros ja baixados. */
+  function applyView(person, records) {
+    viewing = person;
+    // `hidden`, nao so coberto: senao o FAB continuaria focavel por Tab.
+    $('fab').hidden = Boolean(person);
+    showBadge(person);
+    history.replaceState(
+      null,
+      '',
+      person ? `${location.pathname}?u=${encodeURIComponent(person.handle)}` : location.pathname,
+    );
+    return setRecords(records);
+  }
+
+  async function viewShelf(person) {
+    if (person.handle === user.handle) return goHome();
+    const seq = ++viewSeq;
+    closeOthers(null);
+    details.hide();
+    let records;
+    try {
+      records = await usersApi.booksOf(person.handle);
+    } catch (err) {
+      if (err instanceof api.ApiError && err.status === 401) return location.replace('/');
+      toast(err.status === 404 ? 'Essa estante não existe (mais).' : SERVER_DOWN);
+      console.error('[app]', err);
+      return;
+    }
+    if (seq !== viewSeq) return; // trocou de ideia no meio do download
+    await applyView(person, records);
+    announce(`Estante de ${person.nickname || person.name}: ${records.length} livros.`);
+  }
+
+  async function goHome() {
+    const seq = ++viewSeq;
+    closeOthers(null);
+    details.hide();
+    let records;
+    try {
+      records = await api.list();
+    } catch (err) {
+      if (err instanceof api.ApiError && err.status === 401) return location.replace('/');
+      toast(SERVER_DOWN);
+      console.error('[app]', err);
+      return;
+    }
+    if (seq !== viewSeq) return;
+    await applyView(null, records);
+    announce('De volta à sua estante.');
+  }
+
+  badge.addEventListener('click', () => goHome().catch((err) => console.error('[app]', err)));
 
   const account = createAccountMenu({
     toggle: $('account'),
     menu: $('account-menu'),
     user,
+    isViewing: () => Boolean(viewing),
+    onProfile: () => profile.open(),
+    onHome: () => goHome().catch((err) => console.error('[app]', err)),
+    onFriends: () => friends.open(),
     onInvite: () => invites?.open(),
     async onLogout() {
       try {
@@ -183,7 +300,7 @@ async function boot() {
       deselect();
       sortMenu.close();
       account.close();
-      invites?.close({ returnFocus: false });
+      for (const d of [invites, profile, friends]) d?.close({ returnFocus: false });
     },
 
     // Escolheu um resultado: as capas (-M da estante, -L da apresentacao)
@@ -197,6 +314,9 @@ async function boot() {
       // estante e a mensagem de erro fica no proprio formulario.
       const saved = await api.add(record);
       details.hide();
+      // Trocou para a estante de um amigo enquanto o POST voava: o livro foi
+      // salvo na MINHA, e e la que vai aparecer — nao na cena alheia.
+      if (viewing) return;
 
       // A animacao NAO e esperada de proposito: assim ela roda ao mesmo tempo
       // em que o painel se esvazia e colapsa, que e o efeito pedido. Esperar
@@ -217,6 +337,7 @@ async function boot() {
     async onUpdate(id, patch) {
       const saved = await api.update(id, patch);
       details.hide();
+      if (viewing) return; // idem: `updateRecord` faria push no acervo alheio
       await updateRecord(saved);
       announce(`${saved.title} atualizado.`);
     },
@@ -224,6 +345,7 @@ async function boot() {
     async onDelete(id) {
       await api.remove(id);
       details.hide();
+      if (viewing) return;
       await removeRecord(id);
       announce('Livro removido da estante.');
     },
@@ -241,7 +363,23 @@ async function boot() {
   const ready = (async () => {
     let records = [];
     try {
-      records = await api.list();
+      // `?u=<handle>`: abre direto na estante do amigo — um fetch, sem piscar a
+      // minha antes. Se a pessoa nao existe (ou e eu), cai na minha.
+      if (owner && owner !== user.handle) {
+        const person = (await usersApi.listUsers()).items.find((p) => p.handle === owner);
+        if (person) {
+          records = await usersApi.booksOf(owner);
+          viewing = person;
+          $('fab').hidden = true;
+          showBadge(person);
+          history.replaceState(null, '', `${location.pathname}?u=${encodeURIComponent(owner)}`);
+        } else {
+          toast('Essa estante não existe (mais). Esta é a sua.');
+          records = await api.list();
+        }
+      } else {
+        records = await api.list();
+      }
     } catch (err) {
       // Sessao morreu entre o `me()` e o `list()` (raro; ex.: "Sair" noutra
       // aba): recomecar do zero cai na tela de entrada.
@@ -269,7 +407,14 @@ async function boot() {
     announce(`${initial.length} ${initial.length === 1 ? 'livro' : 'livros'} na estante.`);
   }
 
-  if (import.meta.env.DEV) installDebugHooks({ details, panel, invites });
+  // Primeiro login: o Perfil abre sozinho, com o primeiro nome do Google como
+  // sugestao. Fechar sem salvar e permitido — titulo generico ate preencher
+  // pelo menu.
+  if (welcome) profile.open({ suggest: welcome.name });
+
+  if (import.meta.env.DEV) {
+    installDebugHooks({ details, panel, invites, profile, friends, viewShelf, goHome });
+  }
 }
 
 /**
@@ -282,10 +427,11 @@ async function boot() {
  *   __shelf.wipe()          -> limpa a MINHA estante
  *   __shelf.splash({ nickname: 'Bruno', gender: 'm' })  -> reprisa a abertura
  *   __shelf.me()            -> o usuario logado, como o servidor o ve
+ *   __shelf.view('ana')     -> a estante da ana (modo leitura); .home() volta
  *   __shelf.invites() / .invite(email) / .revoke(email)  -> a allowlist (admin)
  *   __shelf.logout()
  */
-async function installDebugHooks({ details, panel, invites }) {
+async function installDebugHooks({ details, panel, invites, profile, friends, viewShelf, goHome }) {
   const { renderer, booksGroup, camera, scene: sceneRef } = await import(
     './scene/renderer.js'
   );
@@ -391,6 +537,16 @@ async function installDebugHooks({ details, panel, invites }) {
       await preview.leave(Promise.resolve());
     },
     me,
+    /** Modo leitura pelo console: `.view('ana')` abre a estante dela; `.home()` volta. */
+    view: async (handle) => {
+      const person = (await usersApi.listUsers()).items.find((p) => p.handle === handle);
+      if (!person) throw new Error(`handle nao encontrado: ${handle}`);
+      await viewShelf(person);
+    },
+    home: goHome,
+    friends: usersApi.listUsers,
+    profileDialog: profile,
+    friendsDialog: friends,
     invites: invitesApi.list,
     invite: invitesApi.invite,
     revoke: invitesApi.revoke,
@@ -401,6 +557,10 @@ async function installDebugHooks({ details, panel, invites }) {
     },
     /** Abre o cartao numa ancora arbitraria — testa o grampo contra a viewport. */
     card: (index, x, y) => details.show(allRecords()[index], { x, y }),
+    // `edit` e `seed` nao sabem do modo leitura: na estante de um amigo, `edit`
+    // abre o painel num livro que nao e meu (o servidor recusa com 404) e
+    // `seed` grava na MINHA e desenha na cena alheia. Ferramenta de DEV; volte
+    // com `.home()` antes.
     edit: (index) => panel.openForEdit(allRecords()[index]),
     async seed(n = 5, pages = 300) {
       for (let i = 0; i < n; i++) {

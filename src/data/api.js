@@ -52,14 +52,18 @@ export const json = (body, method = 'POST') => ({
  * `limit` nao vai na URL de proposito: o tamanho de pagina e decisao do
  * servidor, e mora num lugar so.
  *
+ * `base` existe para a estante alheia (`/api/v1/users/:handle/books`, em
+ * `users.js`): mesma paginacao, mesmo formato de pagina, outro dono.
+ *
+ * @param {string} [base]  rota da listagem; a minha estante por padrao
  * @returns {Promise<Array<object>>} livros na ordem da estante
  */
-export async function list() {
+export async function list(base = BASE) {
   const all = [];
   let cursor = null;
 
   do {
-    const url = cursor === null ? BASE : `${BASE}?cursor=${encodeURIComponent(cursor)}`;
+    const url = cursor === null ? base : `${base}?cursor=${encodeURIComponent(cursor)}`;
     const page = await request(url);
     if (!page?.items?.length) break; // guarda contra laco infinito
     all.push(...page.items);

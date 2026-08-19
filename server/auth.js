@@ -135,7 +135,13 @@ router.get('/google/callback', async (req, res) => {
       `[auth] login ${outcome.user.email} sub=${outcome.user._id} ` +
         `(${outcome.created ? 'novo' : 'existente'}, ${outcome.user.role})`,
     );
-    res.redirect('/');
+    // Primeiro login: o cliente abre o Perfil sozinho, com o primeiro nome do
+    // Google como sugestao de apelido. Nada e gravado — `nickname` continua
+    // nascendo null, e o `?welcome=` e lido e apagado da URL no boot.
+    const welcome = outcome.created
+      ? `/?welcome=1&nome=${encodeURIComponent(verified.claims.givenName)}`
+      : '/';
+    res.redirect(welcome);
   } catch (err) {
     console.error('[auth] callback falhou:', err);
     back(res, 'erro');

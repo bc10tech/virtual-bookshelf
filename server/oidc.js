@@ -63,7 +63,7 @@ export function decodeIdToken(jwt) {
  * As claims que importam, e so elas. `skewMs` tolera relogio adiantado do
  * servidor; `exp` vem em segundos.
  *
- * @returns {{ ok: true, claims: { sub: string, email: string, name: string, picture: string|null } }
+ * @returns {{ ok: true, claims: { sub: string, email: string, name: string, givenName: string, picture: string|null } }
  *         | { ok: false, error: string }}
  */
 export function verifyClaims(payload, { clientId, now = Date.now(), skewMs = 60_000 }) {
@@ -85,6 +85,9 @@ export function verifyClaims(payload, { clientId, now = Date.now(), skewMs = 60_
       sub: payload.sub,
       email: normalizeEmail(payload.email),
       name: typeof payload.name === 'string' ? payload.name : '',
+      // Primeiro nome: vira a SUGESTAO de apelido no primeiro login (item 4).
+      // Nao e persistido — so viaja na URL do redirect.
+      givenName: typeof payload.given_name === 'string' ? payload.given_name : '',
       picture: typeof payload.picture === 'string' && payload.picture ? payload.picture : null,
     },
   };

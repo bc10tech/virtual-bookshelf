@@ -158,6 +158,14 @@ export const BOOK = {
 
   SELECT_LIFT_Z: 0.03, // quanto o livro selecionado avanca
   SELECT_SCALE: 1.04,
+
+  /**
+   * Livro em leitura (tem `startDate` e nao tem `endDate`) fica puxado para a
+   * frente em repouso — a estante conta sozinha o que se esta lendo. Menor que
+   * `SELECT_LIFT_Z` de proposito: a selecao ainda tem que subir visivelmente
+   * por cima dele (os dois se somam em `slotPosition` + `tweenSelection`).
+   */
+  READING_LIFT_Z: 0.02,
 };
 
 export const bookThickness = (pages) => {

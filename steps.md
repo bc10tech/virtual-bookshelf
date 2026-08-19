@@ -31,8 +31,10 @@ Isso muda o critério que decide as coisas:
 O que existe hoje: um Express com login pelo Google e allowlist administrada
 pelo app, falando com um MongoDB (local em container, ou o Atlas M0), e um
 front que só desenha a estante de quem está logado — todo filtro leva
-`userId`, e o banco recusa livro sem dono. Os itens 1, 2 e 3 abaixo estão
-feitos e ficam como registro das decisões; do 4 em diante é o caminho novo.
+`userId`, e o banco recusa livro sem dono — e, desde o item 4, cada pessoa
+tem perfil (apelido, gênero, handle) e vê a estante das outras em modo
+leitura. Os itens 1 a 4 abaixo estão feitos e ficam como registro das
+decisões; do 5 em diante é o caminho novo.
 
 ---
 
@@ -256,12 +258,82 @@ funcionar igual no celular.** O que ficou, e por quê:
   `aud`, `exp`, `email_verified`, malformado, skew), `identity` (handles,
   truncamento, sufixo), `gate` (`authFlagFromSearch`).
 
-## 4. Perfil e amigos
+## 4. Perfil e amigos — ✅ feito
 
 O modelo é o mais simples que atende o pedido: **todo mundo que está logado se
 vê.** A allowlist *é* o convite; não há pedido de amizade, aprovação, bloqueio.
 Se um dia isso apertar, uma coleção `follows` entra na frente sem mexer no
 resto.
+
+**O que ficou, e as decisões tomadas na implementação** (o texto original do
+plano segue abaixo, como registro):
+
+- ✅ **API** (`server/users.js`): `GET /users` devolve `{ year, items }` com um
+  projetor **mínimo** por pessoa (`handle`, `name`, `picture`, `nickname` +
+  `total`, `readThisYear`, `reading: { title } | null`) — sem `email`, sem
+  `role`, sem `_id`; o resumo é um `find` com projeção em `books` reduzido por
+  `server/stats.js` (puro, testado) em vez de um `aggregate` que ninguém
+  testaria sem banco. `GET /users/:handle/books` valida o handle antes de
+  consultar (lixo → 404 sem ir ao banco), resolve o `userId` **no servidor** e
+  chama o mesmo `fetchPage` de `books.js` (a listagem foi extraída em
+  `parsePageQuery` + `fetchPage`). `PATCH /users/me`: `validateProfile` (zod;
+  apelido em branco → `null`, handle em minúsculas na entrada, `me` reservado,
+  corpo vazio → "nada para atualizar"); o `$set` é **exatamente** o valor
+  validado (`users` é `additionalProperties: false` e não tem `updatedAt`);
+  11000 → 409 "este handle ja esta em uso". **Nenhum campo novo no banco**, logo
+  nenhum `db.mjs setup`.
+- ✅ **Primeiro login**: `verifyClaims` extrai `givenName`; o callback redireciona
+  para `/?welcome=1&nome=<given_name>` quando `resolveLogin` criou o usuário.
+  Escolhido o **redirect**, não o flag no `GET /users/me`: `nickname` continua
+  nascendo `null` (fechar sem salvar = título genérico, como pedido) e nada é
+  persistido — o nome só viaja na URL e é apagado no boot.
+- ✅ **URL**: `src/bootParams.js` (puro, testado) lê `?auth`, `?welcome&nome` e
+  `?u` **uma vez**, e o `main.js` apaga a query inteira com `replaceState`. O
+  `?u=` é reescrito pelo modo leitura ao entrar; F5 na estante de um amigo
+  reabre a mesma, F5 após o primeiro login **não** reabre o Perfil. Com `?u=`
+  no boot, a estante do amigo é buscada **dentro do `ready`** (um fetch, sem
+  piscar a minha antes); handle inexistente → toast e a minha. O `?u=` de um
+  **visitante** se perde no login (o callback volta para `/`) — o link do
+  WhatsApp funciona para quem já está logado; fora do escopo por ora.
+- ✅ **Perfil — a tela** (`src/ui/profile.js`, `#profile` no `index.html`):
+  apelido com **prévia ao vivo** (o mesmo `splashTitle` da splash, sufixo em
+  `.splash__accent`), gênero em três rádios (`m`/`f`/vazio → `null`), handle com
+  `pattern` (o atributo usa o flag `v`: o hífen na classe **tem de ser
+  escapado**, `[a-z0-9\-]`) e a URL `?u=` mostrada ao lado. Salvar →
+  `Object.assign(user, updated)` — o menu da conta lê o objeto por referência
+  a cada abertura, então nada de reload. Abre sozinho após a splash quando há
+  `welcome`; Escape/fechar sem salvar é permitido.
+- ✅ **Casca comum**: `src/ui/leftDialog.js` (open/close, `inert` no
+  `transitionend`, `.corner--top-left.is-hidden`, Escape) — Convidar, Perfil e
+  Amigos ocupam o mesmo canto, e o `onOpen` de cada um fecha os outros dois, o
+  painel, o popover de ordenação e a seleção.
+- ✅ **Amigos** (`src/ui/friends.js`): foto (`referrerpolicy="no-referrer"` —
+  googleusercontent devolve 403 com alguns referers), nome (apelido, senão
+  nome), "lendo agora: *título* · N lidos em {ano}" (ano vem do servidor);
+  exclui o próprio handle. Tocar → modo leitura.
+- ✅ **Modo leitura** (`main.js`): `viewing` + `viewSeq` (descarta a resposta
+  atrasada de uma troca rápida); `stage.setRecords(list)` = `records = […]`,
+  `recompute()`, `syncScene()` — **nada** de `meshById.clear()`/`pendingIds.clear()`:
+  o molde do context-restore é o molde errado aqui (lá os meshes morreram com
+  o contexto; aqui estão vivos, e limpar o mapa sem detachar os orfanaria). A
+  etapa 1 do `syncScene` libera os do dono anterior e `stillWanted` descarta
+  capas atrasadas. FAB `hidden`, cartão sem "Editar" (`details.show(rec, at,
+  { editable: false })`; a review aparece), selo `#owner-badge` no topo (o
+  paginador desce quando ele aparece), item **Minha estante** no menu só em
+  modo leitura. Os callbacks do painel **pulam** `addRecord/updateRecord/
+  removeRecord` com `viewing` ativo (um PATCH em voo faria `push` no acervo
+  alheio). Sort do visitante (`localStorage`) é mantido — é preferência de
+  visualização, não dado. `__shelf.view(handle)`/`.home()`.
+- ✅ **"Lendo agora" na cena**: `Placement.reading` em `computeLayout` e
+  `BOOK.READING_LIFT_Z` (0,02, menor que `SELECT_LIFT_Z`) somado em
+  `slotPosition` — reflow, pouso da adição e o `restZ` da seleção passam todos
+  por ali, então preencher `endDate` faz o livro deslizar de volta sozinho.
+- **Fica para depois**: salgar `editionKey` com o `userId` (opcional, como
+  previsto); `?u=` sobrevivendo ao login do visitante.
+- **Testes novos**: `bootParams`, `layout` (reading/lift), `stats`,
+  `validate` (perfil); `oidc` atualizado para o `givenName`.
+
+---
 
 - **API**: `GET /api/v1/users/me` (✅ item 3); `GET /api/v1/users` (lista de
   todo mundo, com `handle`, `name`, `picture` e contagens);

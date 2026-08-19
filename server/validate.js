@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX, PAGES, RATING, COVER_HOST, DATE_RE, ID_RE, EMAIL_RE } from './limits.js';
+import { MAX, PAGES, RATING, COVER_HOST, DATE_RE, ID_RE, EMAIL_RE, HANDLE_RE, GENDERS } from './limits.js';
 
 /**
  * Validacao de entrada da API — a PRIMEIRA barreira.
@@ -234,5 +234,61 @@ export function validateInvite(body) {
   }
   const result = inviteSchema.safeParse(body);
   if (!result.success) return { ok: false, error: result.error.issues[0].message };
+  return { ok: true, value: result.data };
+}
+
+// --- perfil -----------------------------------------------------------------
+
+// Mensagens do formulario de Perfil (o cliente as mostra tal qual).
+const ERR_PROFILE = {
+  nickname: `apelido: ate ${MAX.nickname} caracteres`,
+  gender: "genero: 'm', 'f' ou null",
+  handle: `handle: so letras minusculas, numeros e hifen (sem hifen nas pontas), ate ${MAX.handle}`,
+  reserved: 'handle: este nome e reservado',
+};
+
+// `me` e o segmento de `GET /users/me`: um usuario com esse handle ficaria
+// inalcancavel em qualquer rota `/users/:handle` que venha a existir.
+const RESERVED_HANDLES = new Set(['me']);
+
+// Tudo opcional (e um PATCH), e `z.object` sem `.strict()`: o strip e o que
+// descarta um `role` ou `email` que o cliente tente mandar junto.
+const profileSchema = z.object({
+  nickname: z
+    .string({ error: ERR_PROFILE.nickname })
+    .trim()
+    .max(MAX.nickname, { error: ERR_PROFILE.nickname })
+    // Apelido em branco e "sem apelido": grava `null`, que e como o campo
+    // nasce e o que a splash trata como titulo generico.
+    .transform((v) => v || null)
+    .nullable()
+    .optional(),
+  gender: z.enum(GENDERS, { error: ERR_PROFILE.gender }).nullable().optional(),
+  handle: z
+    .string({ error: ERR_PROFILE.handle })
+    .trim()
+    // Minusculas na entrada, como o e-mail: `HANDLE_RE` so aceita minusculas
+    // e "Bruno" digitado no campo deve virar `bruno`, nao um erro.
+    .toLowerCase()
+    .max(MAX.handle, { error: ERR_PROFILE.handle })
+    .regex(HANDLE_RE, { error: ERR_PROFILE.handle })
+    .refine((v) => !RESERVED_HANDLES.has(v), { error: ERR_PROFILE.reserved })
+    .optional(),
+});
+
+/**
+ * Corpo de `PATCH /api/v1/users/me`. Devolve so as chaves presentes — e o
+ * `$set` tem de ser exatamente elas, porque `users` e
+ * `additionalProperties: false`.
+ * @returns {{ ok: true, value: { nickname?: string|null, gender?: 'm'|'f'|null, handle?: string } }
+ *         | { ok: false, error: string }}
+ */
+export function validateProfile(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'corpo deve ser um objeto' };
+  }
+  const result = profileSchema.safeParse(body);
+  if (!result.success) return { ok: false, error: result.error.issues[0].message };
+  if (Object.keys(result.data).length === 0) return { ok: false, error: 'nada para atualizar' };
   return { ok: true, value: result.data };
 }

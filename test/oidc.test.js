@@ -18,7 +18,8 @@ const goodPayload = () => ({
   sub: '10769150350006150715113082367',
   email: 'Bruno@Gmail.com',
   email_verified: true,
-  name: 'Bruno',
+  name: 'Bruno Cesar',
+  given_name: 'Bruno',
   picture: 'https://lh3.googleusercontent.com/a/x',
 });
 
@@ -52,7 +53,8 @@ test('claims validas: e-mail normalizado, name e picture extraidos', () => {
   assert.deepEqual(r.claims, {
     sub: '10769150350006150715113082367',
     email: 'bruno@gmail.com',
-    name: 'Bruno',
+    name: 'Bruno Cesar',
+    givenName: 'Bruno',
     picture: 'https://lh3.googleusercontent.com/a/x',
   });
 });
@@ -85,11 +87,13 @@ test('tolerancia de relogio: expirado ha 30 s ainda passa com skew de 60 s', () 
   assert.equal(verifyClaims(p, { clientId: CLIENT_ID, now: NOW }).ok, true);
 });
 
-test('name ausente vira "", picture ausente vira null', () => {
+test('name e given_name ausentes viram "", picture ausente vira null', () => {
   const p = goodPayload();
   delete p.name;
+  delete p.given_name;
   delete p.picture;
   const r = verifyClaims(p, { clientId: CLIENT_ID, now: NOW });
   assert.equal(r.claims.name, '');
+  assert.equal(r.claims.givenName, '');
   assert.equal(r.claims.picture, null);
 });

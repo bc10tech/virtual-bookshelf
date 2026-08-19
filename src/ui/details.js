@@ -86,7 +86,14 @@ export function createDetails(root) {
     )}px`;
   }
 
-  function show(rec, at) {
+  /**
+   * @param {object} rec
+   * @param {{ x: number, y: number }} [at]  onde o usuario clicou
+   * @param {{ editable?: boolean }} [opts]  `editable: false` e o modo leitura
+   *   (estante de outra pessoa): o cartao sai sem "Editar" — a review, sim,
+   *   aparece, e e o que se quer ver.
+   */
+  function show(rec, at, { editable = true } = {}) {
     root.replaceChildren();
     anchor = at ?? { x: window.innerWidth / 2, y: window.innerHeight / 2 };
 
@@ -149,15 +156,17 @@ export function createDetails(root) {
       root.append(review);
     }
 
-    const actions = document.createElement('div');
-    actions.className = 'details__actions';
-    const edit = document.createElement('button');
-    edit.type = 'button';
-    edit.className = 'details__edit';
-    edit.append(icon('i-pencil'), document.createTextNode('Editar'));
-    edit.addEventListener('click', () => onEdit(rec));
-    actions.append(edit);
-    root.append(actions);
+    if (editable) {
+      const actions = document.createElement('div');
+      actions.className = 'details__actions';
+      const edit = document.createElement('button');
+      edit.type = 'button';
+      edit.className = 'details__edit';
+      edit.append(icon('i-pencil'), document.createTextNode('Editar'));
+      edit.addEventListener('click', () => onEdit(rec));
+      actions.append(edit);
+      root.append(actions);
+    }
 
     // Precisa estar visivel para poder ser medido; como nada disto cede a thread,
     // nenhum frame chega a ser pintado na posicao errada.

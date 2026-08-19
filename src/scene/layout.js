@@ -87,7 +87,11 @@ export function bookDimensions(rec) {
  * @property {number} thickness
  * @property {number} height
  * @property {number} depth
+ * @property {boolean} reading     em leitura: fica puxado para a frente em repouso
  */
+
+/** "Lendo agora": comecou e ainda nao terminou. O cartao de detalhes usa a mesma regra. */
+export const isReading = (rec) => Boolean(rec.startDate && !rec.endDate);
 
 /**
  * @param {Array<object>} records ja na ordem de exibicao desejada
@@ -131,6 +135,7 @@ export function computeLayout(records) {
       shelfIndex: shelf,
       x: cursor + dims.thickness / 2,
       floorY: 0, // preenchido na 2a passada
+      reading: isReading(rec),
       ...dims,
     });
 
@@ -158,7 +163,9 @@ export function slotPosition(p) {
     x: p.x,
     y: p.floorY + p.height / 2,
     // Todas as lombadas alinhadas no mesmo Z: pegam luz por igual e a borda
-    // irregular do fundo fica escondida.
-    z: BOOK.FRONT_Z - p.depth / 2,
+    // irregular do fundo fica escondida. O livro em leitura e a unica excecao,
+    // e ela nasce AQUI de proposito: reflow, pouso da adicao e o `restZ` da
+    // selecao passam todos por esta funcao, entao nenhum deles precisa saber.
+    z: BOOK.FRONT_Z - p.depth / 2 + (p.reading ? BOOK.READING_LIFT_Z : 0),
   };
 }

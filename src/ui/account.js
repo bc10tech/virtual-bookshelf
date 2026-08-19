@@ -1,14 +1,28 @@
 /**
  * Canto superior esquerdo: o botao de conta abre um menu com quem esta logado,
+ * "Perfil", "Minha estante" (so enquanto se ve a de outra pessoa), "Amigos",
  * "Convidar" (so admin) e "Sair". Mesmo padrao do `sortMenu.js` — `hidden` +
  * `aria-expanded`, foco movido a mao entre `role="menuitem"`, Escape devolve o
  * foco ao botao, toque fora fecha —, so que num estagio, e crescendo para
  * baixo.
  *
+ * O menu e remontado a cada abertura: por isso `user` pode ser mutado por fora
+ * (o Perfil salva e faz `Object.assign`) e `isViewing` e lido na hora.
+ *
  * Nome e e-mail vao ao DOM por `textContent`: vem do Google, mas a regra e a
  * mesma para todo texto que nao e nosso.
  */
-export function createAccountMenu({ toggle, menu, user, onInvite, onLogout }) {
+export function createAccountMenu({
+  toggle,
+  menu,
+  user,
+  isViewing = () => false,
+  onProfile,
+  onHome,
+  onFriends,
+  onInvite,
+  onLogout,
+}) {
   let open = false;
 
   function show(on) {
@@ -57,13 +71,16 @@ export function createAccountMenu({ toggle, menu, user, onInvite, onLogout }) {
     who.className = 'menu__who';
     const name = document.createElement('span');
     name.className = 'menu__name';
-    name.textContent = user.name || user.handle;
+    name.textContent = user.nickname || user.name || user.handle;
     const email = document.createElement('span');
     email.className = 'menu__email';
     email.textContent = user.email;
     who.append(name, email);
     menu.append(who);
 
+    menu.append(item('Perfil', 'i-user', onProfile));
+    if (isViewing()) menu.append(item('Minha estante', 'i-home', onHome));
+    menu.append(item('Amigos', 'i-users', onFriends));
     if (user.role === 'admin') menu.append(item('Convidar', 'i-plus', onInvite));
     menu.append(item('Sair', 'i-logout', onLogout));
   }

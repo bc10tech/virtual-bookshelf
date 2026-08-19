@@ -26,6 +26,8 @@ servidor sobe, mas ninguém entra.
 ## Arquitetura
 
 ```
+src/bootParams.js   o que a URL diz ao boot (?auth, ?welcome&nome, ?u) — puro,
+                     testado; main.js lê uma vez e apaga a query
 src/config.js       fonte única de TODO número: coordenadas da estante, curva
                      páginas→espessura, tamanhos de fonte do canvas, tempos de
                      animação, cores. Mudar um número é sempre aqui.
@@ -41,9 +43,15 @@ src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
                      3 fases em CSS) + splashTitle.js (texto puro, testado),
                      gate.js (tela de entrada do visitante; authFlagFromSearch
                      é puro e testado), account.js (menu de conta, canto
-                     superior esquerdo), invites.js (diálogo da allowlist)
-src/data/            api.js (CRUD + ApiError com status), search.js (Open
-                     Library), sort.js, user.js (me/logout), invites.js
+                     superior esquerdo), leftDialog.js (casca dos diálogos
+                     desse canto: is-open + inert, sheet no celular),
+                     invites.js (allowlist), profile.js (apelido/gênero/handle,
+                     prévia ao vivo do título), friends.js (lista de quem está
+                     logado; tocar abre a estante em modo leitura)
+src/data/            api.js (CRUD + ApiError com status; list(base) serve a
+                     minha estante e a alheia), search.js (Open Library),
+                     sort.js, user.js (me/logout), invites.js, users.js
+                     (listUsers/booksOf/updateMe)
 src/assets/          fonte dos assets vetorizados (hoje só a logo original em
                      PNG; não entra no build)
 server/              Express + driver oficial do MongoDB (sem Mongoose):
@@ -54,11 +62,14 @@ server/              Express + driver oficial do MongoDB (sem Mongoose):
                      auth + verificação do id_token, puro), cookies.js (parse,
                      puro), identity.js (e-mail/handle, puro), session.js
                      (cookie vb.sid + coleção sessions, requireUser/requireAdmin),
-                     auth.js (rotas /auth), users.js (/users/me, resolveLogin),
-                     invites.js (/invites, só admin)
+                     auth.js (rotas /auth), users.js (GET/PATCH /users/me,
+                     GET /users, GET /users/:handle/books, resolveLogin),
+                     stats.js (resumo por pessoa, puro), invites.js (/invites,
+                     só admin)
 scripts/db.mjs       check/setup/migrate/claim — aplica schema+índices em todas
                      as coleções, migra o acervo, carimba livros sem dono
-test/                node --test — splashTitle, cookies, oidc, identity, gate
+test/                node --test — splashTitle, cookies, oidc, identity, gate,
+                     bootParams, layout, stats, validate (perfil)
 ```
 
 Não existe `bookshelf.obj`/`.mtl` no repo. A estante é gerada por código a
@@ -139,7 +150,35 @@ prateleiras, o que o arquivo não fazia.
   `req.user._id`** (`owner(req)` em `books.js`), e todo filtro de leitura e
   escrita leva `userId`. É a única regra de autorização do app. No POST, o
   `userId` é escrito **depois** do spread do valor validado — nada do cliente
-  sobrescreve o dono. `/api/health` e `/auth` ficam fora.
+  sobrescreve o dono. `/api/health` e `/auth` ficam fora. **A única exceção
+  é leitura de estante alheia, e só por `GET /users/:handle/books`**
+  (`users.js`): o `userId` é resolvido **no servidor** a partir do handle e
+  passado ao mesmo `fetchPage` de `books.js`; nunca vem do cliente. Escrita
+  em estante alheia não existe. Não há estante pública: tudo exige sessão.
+- **O `$set` do `PATCH /users/me` é exatamente o que `validateProfile`
+  devolveu.** `users` é `additionalProperties: false` e não tem `updatedAt`:
+  um campo de brinde é recusado pelo banco (121). Apelido em branco vira
+  `null` no zod — é como o campo nasce e o que a splash trata como genérico.
+- **Trocar de dono na cena é `setRecords()` → `syncScene()`, e nada mais**
+  (`stage.js`). Não copiar o reset do context-restore (`meshById.clear()`):
+  lá os meshes morreram com o contexto, aqui estão vivos — limpar o mapa sem
+  detachar os orfanaria dentro da cena, o mesmo bug dos 76 meshes por outra
+  porta. A etapa 1 do `syncScene` libera o que não está em `wanted`, e uma
+  capa do dono anterior que chegue depois cai em `stillWanted`. O `main.js`
+  guarda um `viewSeq` para descartar a resposta atrasada de uma troca rápida,
+  e os callbacks do painel **pulam** `addRecord/updateRecord/removeRecord`
+  quando `viewing` está ativo (`updateRecord` faria `push` no acervo alheio).
+- **O lift de "lendo agora" nasce em `slotPosition()`** (`layout.js`), via
+  `Placement.reading` + `BOOK.READING_LIFT_Z`. Reflow, pouso da adição e o
+  `restZ` da seleção passam todos por ela — nenhum chamador sabe do lift, e
+  preencher `endDate` faz o livro deslizar de volta sozinho. É menor que
+  `SELECT_LIFT_Z` de propósito (a seleção ainda sobe por cima).
+- **A URL é lida uma vez no boot (`bootParams`) e a query inteira é apagada
+  com `replaceState`.** Quem reescreve `?u=<handle>` é o próprio modo leitura
+  ao entrar; "Minha estante" volta ao `pathname`. F5 na estante de um amigo
+  reabre a mesma; F5 depois do primeiro login **não** reabre o Perfil.
+  `?welcome=1&nome=` vem do callback (`auth.js`) quando `resolveLogin` criou
+  o usuário; o `given_name` só viaja na URL, nada é persistido.
 - **Sessão só em cookie `httpOnly` (`vb.sid`), guardada em `sessions`.** Sem
   JWT, sem `localStorage`: um XSS não rouba a sessão. `Secure` vem de `BASE_URL`
   começar com `https:`, nunca de `NODE_ENV` — em `http://localhost` um cookie
@@ -210,8 +249,10 @@ Com `npm run dev`, o console do browser expõe `__shelf` (não entra no build de
 produção): `__shelf.stats()`, `.layout()`, `.camera()`, `.seed(n, páginas)`,
 `.sort(criterio, direção)`, `.card(i, x, y)`, `.edit(i)`, `.wipe()`,
 `.splash()` (reprisa a abertura; com `{ nickname, gender }` simula outro
-usuário), `.me()`, `.invites()`/`.invite(email)`/`.revoke(email)` (admin),
-`.logout()`. Só existe depois do login — para visitante o boot para no gate.
+usuário), `.me()`, `.view(handle)`/`.home()` (modo leitura), `.friends()`,
+`.profileDialog`/`.friendsDialog`, `.invites()`/`.invite(email)`/`.revoke(email)`
+(admin), `.logout()`. Só existe depois do login — para visitante o boot para
+no gate. `.edit`/`.seed` não sabem do modo leitura: voltar com `.home()` antes.
 
 Para testar um fluxo logado sem passar pelo Google (ex.: outro usuário), dá
 para inserir um documento em `users` e um em `sessions` direto no Mongo local e

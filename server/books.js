@@ -44,7 +44,21 @@ const parseLimit = (raw) => {
 };
 
 /**
- * GET /api/v1/books — uma pagina da estante, na ordem de insercao.
+ * `?cursor=&limit=` → `{ ok, value: { cursor, limit } | error }`, na convencao
+ * do `validate.js`. So o cursor pode reprovar; `limit` tem padrao.
+ */
+export function parsePageQuery(query) {
+  const limit = parseLimit(query.limit);
+  let cursor = null;
+  if (query.cursor !== undefined) {
+    cursor = Number(query.cursor);
+    if (!Number.isInteger(cursor)) return { ok: false, error: 'cursor invalido' };
+  }
+  return { ok: true, value: { cursor, limit } };
+}
+
+/**
+ * Uma pagina da estante de `userId`, na ordem de insercao.
  *
  * O cursor e o proprio `order`, que ja e a sequencia canonica no banco e e
  * coberto pelo indice `{ userId: 1, order: 1 }`. Paginar por ESTANTE seria o
@@ -53,18 +67,15 @@ const parseLimit = (raw) => {
  * a ordenacao e preferencia de visualizacao do cliente. Replicar as duas coisas
  * aqui criaria uma segunda fonte para numeros que so o `config.js` deve ter.
  *
- * @returns {{ items: object[], nextCursor: number|null }}
+ * Recebe o `userId` em vez de ler `req` porque e a MESMA listagem que serve a
+ * estante alheia (`GET /users/:handle/books`, em `users.js`) — a unica leitura
+ * do app em que o dono nao e quem esta logado, e o `userId` e resolvido la, no
+ * servidor, a partir do handle.
+ *
+ * @returns {Promise<{ items: object[], nextCursor: number|null }>}
  */
-router.get('/', async (req, res) => {
-  const limit = parseLimit(req.query.limit);
-
-  let cursor = null;
-  if (req.query.cursor !== undefined) {
-    cursor = Number(req.query.cursor);
-    if (!Number.isInteger(cursor)) return bad(res, 'cursor invalido');
-  }
-
-  const filter = { userId: owner(req) };
+export async function fetchPage(userId, { cursor, limit }) {
+  const filter = { userId };
   if (cursor !== null) filter.order = { $gt: cursor };
 
   // Um a mais que o pedido: o excedente responde "tem proxima pagina?" sem
@@ -76,10 +87,17 @@ router.get('/', async (req, res) => {
     .toArray();
 
   const items = rows.slice(0, limit);
-  res.json({
+  return {
     items,
     nextCursor: rows.length > limit ? items[items.length - 1].order : null,
-  });
+  };
+}
+
+/** GET /api/v1/books — uma pagina da MINHA estante. */
+router.get('/', async (req, res) => {
+  const q = parsePageQuery(req.query);
+  if (!q.ok) return bad(res, q.error);
+  res.json(await fetchPage(owner(req), q.value));
 });
 
 /** POST /api/v1/books — cria um livro no fim da estante. */

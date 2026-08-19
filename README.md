@@ -10,13 +10,21 @@ para a prateleira seguinte. A estante nasce com 3 vãos e cresce até 5; a parti
 daí nasce uma estante nova, e chips numerados no topo alternam entre elas.
 
 Clicar num livro abre um cartão ao lado dele com a review e os detalhes, com um
-botão para editar ou excluir o registro. Os botões dos cantos inferiores ordenam
-a estante e alternam entre modo claro e escuro; o do canto superior esquerdo é a
-conta (convidar, sair).
+botão para editar ou excluir o registro. Um livro que se está lendo (tem começo e
+não tem fim) fica um pouco puxado para a frente na prateleira. Os botões dos
+cantos inferiores ordenam a estante e alternam entre modo claro e escuro; o do
+canto superior esquerdo é a conta (Perfil, Amigos, Convidar, Sair).
 
 Entra-se com a conta do Google, e só quem foi convidado entra: o admin libera um
 e-mail pelo próprio app (menu da conta → Convidar), de qualquer aparelho, sem
-tocar em `.env` nem em console.
+tocar em `.env` nem em console. Todo mundo que está logado se vê: **Amigos**
+lista as pessoas (foto, "lendo agora", "N lidos em 2026") e um toque abre a
+estante delas em modo leitura — mesma cena, sem botão de adicionar, cartão sem
+"Editar", um selo no topo dizendo de quem é. `?u=<handle>` abre direto (é o link
+para mandar no WhatsApp; funciona para quem já está logado). **Perfil** é onde
+se escolhe o apelido (o título da abertura vira "Estante Virtual do Bruno"), o
+gênero (só a preposição) e o handle; no primeiro login ele abre sozinho com o
+primeiro nome do Google como sugestão.
 
 ## Rodando
 
@@ -66,8 +74,9 @@ npm test
 ```
 
 Roda `node --test` (sem dependência nova) sobre `test/`: as peças puras — o
-título da splash, o parse de cookie, a verificação do `id_token`, e-mail/handle
-e a leitura do `?auth=` da tela de entrada.
+título da splash, o parse de cookie, a verificação do `id_token`, e-mail/handle,
+a leitura da URL no boot, o empacotamento/lift de leitura, o resumo por pessoa e
+a validação do perfil.
 
 ## Como está montado
 
@@ -85,7 +94,8 @@ server/             Express + driver oficial do MongoDB (sem Mongoose)
   identity.js       normalização de e-mail e derivação de handle (puro)
   session.js        cookie vb.sid + coleção sessions; requireUser / requireAdmin
   auth.js           /auth/google, /auth/google/callback, /auth/logout
-  users.js          /api/v1/users/me; criação da conta no primeiro login
+  users.js          /api/v1/users (me, PATCH me, lista, :handle/books); criação da conta
+  stats.js          resumo da estante por pessoa para a lista de amigos (puro)
   invites.js        /api/v1/invites — a allowlist (só admin)
 scripts/db.mjs      aplica schema e índices, migra o acervo, carimba livros sem dono
 src/
@@ -94,7 +104,9 @@ src/
   scene/            three.js: renderer, câmera, estante, madeira, livros, capas, tweens
   data/             acesso à API, busca na Open Library, ordenação, usuário, convites
   ui/               painel, estrelas, paginador, cartão, menu de ordem, tema, splash,
-                    tela de entrada (gate), menu de conta, diálogo de convites
+                    tela de entrada (gate), menu de conta, diálogos de convites,
+                    perfil e amigos (casca comum em leftDialog.js)
+  bootParams.js     o que a URL diz ao boot (?auth, ?welcome, ?u) — puro, testado
 public/             fonts/ (Bitter e Karla, SIL OFL) e favicon.svg (mesmo traço da logo)
 test/               node --test
 ```
@@ -214,9 +226,11 @@ nesse caso.
 
 `vb.sid` é um cookie `httpOnly` com 32 bytes aleatórios; a sessão mora em
 `sessions` (TTL de 30 dias, renovado no uso). `users` guarda `sub` do Google,
-e-mail, `handle`, `role`, `nickname`/`gender` (perfil, ainda por vir). Quem entra
-precisa estar em `users` ou em `invites` — ou ser o `ADMIN_EMAIL`. Todo `/api/v1`
-exige sessão, e todo filtro leva `userId`: ninguém lê nem escreve livro de outro.
+e-mail, `handle`, `role`, `nickname`/`gender` (o perfil). Quem entra precisa
+estar em `users` ou em `invites` — ou ser o `ADMIN_EMAIL`. Todo `/api/v1` exige
+sessão, e todo filtro leva `userId`: ninguém escreve livro de outro. A única
+leitura alheia é `GET /api/v1/users/:handle/books`, com o dono resolvido no
+servidor a partir do handle — e só logado; não existe estante pública.
 
 ## Ferramentas de desenvolvimento
 
@@ -233,6 +247,8 @@ __shelf.edit(0)            // abre o painel em modo edição
 __shelf.wipe()             // limpa a minha estante
 __shelf.splash()           // reprisa a abertura (ou .splash({ nickname, gender }))
 __shelf.me()               // o usuário logado
+__shelf.view('ana')        // a estante da ana, em modo leitura; .home() volta
+__shelf.friends()          // todo mundo, com o resumo de cada estante
 __shelf.invites()          // a allowlist; .invite(email), .revoke(email)
 __shelf.logout()
 ```
@@ -242,6 +258,5 @@ Nada disso vai para o build de produção, e só existe depois do login.
 ## Próximos passos
 
 O projeto é para uso pessoal — eu e poucos amigos, cada um com a sua estante e
-vendo a dos outros. O login com Google e a allowlist já estão de pé; perfil e
-amigos, e o polimento da interface, estão em `steps.md`, que é o documento de
-rumo do projeto.
+vendo a dos outros. Login com Google, allowlist, perfil e amigos já estão de pé;
+o polimento da interface está em `steps.md`, que é o documento de rumo do projeto.

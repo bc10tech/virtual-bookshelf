@@ -1,49 +1,26 @@
+import { createLeftDialog } from './leftDialog.js';
+
 /**
- * Dialogo de convites — a allowlist administravel pelo app. E a mesma casca do
- * painel de cadastro (`.panel`, `.is-open` + `inert`, sheet no celular), aberta
- * a partir do canto de cima a esquerda. Um campo de e-mail e a lista de quem
- * ja foi convidado, com "revogar".
+ * Dialogo de convites — a allowlist administravel pelo app. Casca em
+ * `leftDialog.js` (a mesma de Perfil e Amigos); aqui so o conteudo: um campo
+ * de e-mail e a lista de quem ja foi convidado, com "revogar".
  *
  * Todo texto que vem da API vai por `textContent`.
  */
 export function createInvitesDialog(root, { list, invite, revoke, onOpen }) {
   const $ = (id) => root.querySelector(`#${id}`);
-  const closeBtn = $('invites-close');
   const form = $('invite-form');
   const email = $('invite-email');
   const send = $('invite-send');
   const msg = $('invite-msg');
   const ul = $('invite-list');
-  const corner = document.querySelector('.corner--top-left');
 
-  let isOpen = false;
-
-  function open() {
-    if (isOpen) return;
-    onOpen?.();
-    isOpen = true;
-    root.inert = false;
-    root.classList.add('is-open');
-    corner?.classList.add('is-hidden');
-    email.focus();
-    refresh();
-  }
-
-  function close({ returnFocus = true } = {}) {
-    if (!isOpen) return;
-    isOpen = false;
-    root.classList.remove('is-open');
-    corner?.classList.remove('is-hidden');
-    if (returnFocus) document.getElementById('account')?.focus();
-
-    // `inert` so depois da transicao, como no painel: aplicado antes, o
-    // dialogo sumiria de imediato em vez de encolher.
-    const done = () => {
-      if (!isOpen) root.inert = true;
-      root.removeEventListener('transitionend', done);
-    };
-    root.addEventListener('transitionend', done);
-  }
+  const dialog = createLeftDialog(root, {
+    onOpen,
+    onOpened: refresh,
+    closeButton: $('invites-close'),
+    initialFocus: email,
+  });
 
   function showError(text) {
     msg.textContent = text ?? '';
@@ -134,12 +111,5 @@ export function createInvitesDialog(root, { list, invite, revoke, onOpen }) {
     }
   });
 
-  closeBtn.addEventListener('click', () => close());
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && isOpen) close();
-  });
-
-  root.inert = true;
-
-  return { open, close, get isOpen() { return isOpen; } };
+  return dialog;
 }

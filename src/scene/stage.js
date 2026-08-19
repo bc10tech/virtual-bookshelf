@@ -273,6 +273,26 @@ export async function initStage(initial) {
   await syncScene();
 }
 
+/**
+ * Troca o CONJUNTO inteiro de registros — e assim que se entra na estante de
+ * outra pessoa e se volta para a propria. Nao toca em `meshById` nem em
+ * `pendingIds` de proposito: o `syncScene` ja faz tudo. A etapa 1 dele
+ * detacha e libera cada mesh que nao esta em `wanted` (os do dono anterior),
+ * a etapa 3 cria os novos, e uma capa do dono anterior que chegue depois cai
+ * em `stillWanted` — `records` nao a tem mais — e devolve o material.
+ *
+ * Copiar o reset do context-restore (`meshById.clear()`) aqui seria o erro:
+ * la os meshes morreram com o contexto; aqui estao vivos na cena, e limpar o
+ * mapa sem detachar os orfanaria — o mesmo bug dos 76 meshes, por outra porta.
+ */
+export async function setRecords(list) {
+  records = [...list];
+  recompute();
+  activeCase = Math.max(0, layout.caseCount - 1);
+  onCasesChangedCb(layout.caseCount, activeCase);
+  await syncScene();
+}
+
 export function setActiveCase(i) {
   if (i === activeCase) return Promise.resolve();
   activeCase = i;
