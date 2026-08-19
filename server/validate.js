@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MAX, PAGES, RATING, COVER_HOST, DATE_RE, ID_RE } from './limits.js';
+import { MAX, PAGES, RATING, COVER_HOST, DATE_RE, ID_RE, EMAIL_RE } from './limits.js';
 
 /**
  * Validacao de entrada da API — a PRIMEIRA barreira.
@@ -208,3 +208,31 @@ export function validateBook(body, { partial = false } = {}) {
 
 /** Ids sao gerados pelo cliente (uuid v4) ou pelo fallback base36. */
 export const isValidId = (id) => typeof id === 'string' && ID_RE.test(id);
+
+// --- convites ---------------------------------------------------------------
+
+const ERR_EMAIL = 'email: informe um e-mail valido';
+
+// Minusculas AQUI, na entrada: e o que garante que o `_id` de `invites` casa
+// com o e-mail que o Google devolve (tambem normalizado). Ver `identity.js`.
+const inviteSchema = z.object({
+  email: z
+    .string({ error: ERR_EMAIL })
+    .trim()
+    .toLowerCase()
+    .max(MAX.email, { error: ERR_EMAIL })
+    .regex(EMAIL_RE, { error: ERR_EMAIL }),
+});
+
+/**
+ * Corpo de `POST /api/v1/invites`.
+ * @returns {{ ok: true, value: { email: string } } | { ok: false, error: string }}
+ */
+export function validateInvite(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return { ok: false, error: 'corpo deve ser um objeto' };
+  }
+  const result = inviteSchema.safeParse(body);
+  if (!result.success) return { ok: false, error: result.error.issues[0].message };
+  return { ok: true, value: result.data };
+}

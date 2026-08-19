@@ -28,11 +28,11 @@ Isso muda o critério que decide as coisas:
   existem, não custam nada e é justamente com dados de outras pessoas que a
   segunda barreira passa a valer a pena.
 
-O que existe hoje: um Express sem autenticação falando com um MongoDB (local
-em container, ou o Atlas M0 já migrado), e um front que fala com
-`/api/v1/books` sem noção de usuário — o `userId` já existe em todo documento
-e em todo filtro, valendo `null`. Os itens 1 e 2 abaixo estão feitos e ficam
-como registro das decisões; do 3 em diante é o caminho novo.
+O que existe hoje: um Express com login pelo Google e allowlist administrada
+pelo app, falando com um MongoDB (local em container, ou o Atlas M0), e um
+front que só desenha a estante de quem está logado — todo filtro leva
+`userId`, e o banco recusa livro sem dono. Os itens 1, 2 e 3 abaixo estão
+feitos e ficam como registro das decisões; do 4 em diante é o caminho novo.
 
 ---
 
@@ -122,9 +122,9 @@ o acervo migrado e a segunda barreira ativa.
 - Com `additionalProperties: false`, **campo novo no livro é deploy em dois
   passos**: alargar `schema.js` e rodar `db.mjs setup` **antes** de subir o
   código que escreve o campo.
-- O `userId` está declarado como `['string','null']` de propósito, para o
-  validador sobreviver ao período sem login. Enquanto a união existir, o banco
-  **não pega** um `userId` esquecido. Apertar é parte do item 3.
+- ~~O `userId` está declarado como `['string','null']` de propósito~~ — apertado
+  no item 3: hoje é `string` com o `pattern` do `sub` do Google, e o banco
+  **pega** um `userId` esquecido.
 
 **Os dois ⚠️ da versão anterior, reavaliados pelo pivô:**
 
@@ -138,96 +138,123 @@ o acervo migrado e a segunda barreira ativa.
   `readWrite` **só** em `virtual_bookshelf` deixa de ser cosmético e vira o
   gesto mínimo que se faz junto.
 
-## 3. Login com Google — o próximo passo
+## 3. Login com Google — ✅ feito
 
-O objetivo é: **cinco minutos de configuração, zero senha para guardar, e
-funcionar igual no celular.** A recomendação:
+O objetivo era: **cinco minutos de configuração, zero senha para guardar, e
+funcionar igual no celular.** O que ficou, e por quê:
 
-- **Fluxo *Authorization Code* com redirect**, no servidor:
-  `GET /auth/google` monta a URL e redireciona; o Google volta em
-  `GET /auth/google/callback?code=…`; o servidor troca o `code` pelo
-  `id_token`, verifica, cria a sessão e redireciona para `/`. Implementar com
-  `google-auth-library` (`OAuth2Client.generateAuthUrl` / `getToken` /
-  `verifyIdToken`) — é a biblioteca oficial, servidor-only, não pesa no
-  bundle. **Nenhum script externo no cliente**: a tela de entrada é um botão
-  que aponta para `/auth/google`. Isso é o que faz funcionar em qualquer
-  browser de celular sem popup bloqueado.
+- ✅ **Fluxo *Authorization Code* com redirect, no servidor.** `GET /auth/google`
+  monta a URL e redireciona; o Google volta em `GET /auth/google/callback?code&state`;
+  o servidor troca o `code` pelo `id_token`, verifica, cria a sessão e
+  redireciona para `/`. **Nenhum script externo no cliente**: a tela de entrada
+  (`#gate`, `src/ui/gate.js`) é um `<a href="/auth/google">` — funciona em
+  qualquer browser de celular sem popup bloqueado.
 
-  Configuração necessária, e é *toda* a configuração: criar um "OAuth client
-  ID" (tipo *Web application*) no Google Cloud Console, registrar
-  `<BASE_URL>/auth/google/callback` como redirect URI, e três variáveis no
-  `.env`: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL`. Para
-  desenvolver, `BASE_URL=http://localhost:5173` — o Vite faz proxy de `/auth`
-  para o Express do mesmo jeito que faz de `/api` (acrescentar o prefixo no
-  `vite.config.js`).
+  **Sem `google-auth-library`, sem dependência nova.** A troca do `code` é um
+  `fetch` no endpoint de token (`server/auth.js`) e a verificação é ~60 linhas
+  puras (`server/oidc.js`: `iss`, `aud`, `exp`, `email_verified === true`,
+  `sub`/`email` presentes). **A assinatura não é verificada, de propósito**: o
+  token chega pelo canal de trás, por TLS, direto do Google, e a spec OIDC
+  dispensa nesse caso. Se um dia o token vier do cliente (One Tap), aí é JWKS.
+  `state` anti-CSRF num cookie curto `vb.oauth` (`SameSite=Lax` **obrigatório**
+  — a volta do Google é cross-site; `Strict` quebraria todo login), comparado
+  com `timingSafeEqual` e apagado no callback com o mesmo `path` do set.
 
-- **Sessão em cookie, guardada no Mongo.** Token aleatório de 32 bytes
-  (`crypto.randomBytes`), cookie `vb.sid` `httpOnly; Secure; SameSite=Lax;
-  Path=/`, e uma coleção `sessions` `{ _id: token, userId, createdAt,
-  expiresAt }` com índice TTL em `expiresAt` (30 dias, renovado a cada uso).
-  Sem `express-session`, sem `passport`, sem JWT — um `findOne` por request num
-  índice de chave primária é nada, e o cookie `httpOnly` significa que um XSS
-  não rouba a sessão (o que não seria verdade para um JWT no `localStorage`).
-  Parse do cookie à mão são cinco linhas; `cookie-parser` se preferir.
-  `Secure` só em produção (em `localhost` o cookie não seria gravado).
+  Configuração, e é *toda* a configuração: um "OAuth client ID" (Web
+  application) no Google Cloud Console com `<BASE_URL>/auth/google/callback`
+  em redirect URIs, e `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `BASE_URL`
+  no `.env` (`server/env.js` é o único leitor). Em dev
+  `BASE_URL=http://localhost:5173`; o Vite faz proxy de `/auth` como de `/api`.
+  **Limitação a saber**: o Google não aceita IP privado como redirect URI, então
+  `npm run dev -- --host` + login pelo celular na rede local **não funciona** —
+  só depois do deploy (item 7) ou por túnel https. Com escopos só
+  `openid email profile`, publicar a tela de consentimento não exige
+  verificação (e é melhor que *Testing*, que duplicaria a allowlist em "test
+  users").
 
-- **Allowlist administrável pelo app** — este é o pedido central: **liberar um
-  e-mail do celular, sem tocar em `.env` nem em console.**
-  - Coleção `invites` `{ _id: <e-mail em minúsculas>, invitedBy, createdAt }`.
-  - No callback do Google, o `email` do `id_token` (só com
-    `email_verified: true`) precisa estar em `users` **ou** em `invites`;
-    senão o servidor responde uma página "sua conta ainda não foi convidada"
-    e não cria nada. Quando está em `invites`, o `users` é criado e o convite
-    pode ficar como registro.
-  - Bootstrap: `ADMIN_EMAIL` no `.env` é o único e-mail que entra sem convite,
-    e a conta criada com ele ganha `role: 'admin'`. Só o admin vê, no menu de
-    perfil, o item **"Convidar"**: um campo de e-mail → `POST /api/v1/invites`
-    (403 para quem não é admin). É uma tela de um campo, funciona de qualquer
-    aparelho logado. `GET /api/v1/invites` lista e `DELETE /api/v1/invites/:email`
-    revoga (revogar não derruba quem já entrou; para isso, apagar as sessões
-    do usuário).
+- ✅ **Sessão em cookie, guardada no Mongo** (`server/session.js`). Token
+  `randomBytes(32)` em hex, cookie `vb.sid` `httpOnly; SameSite=Lax; Path=/`,
+  coleção `sessions { _id: token, userId, createdAt, expiresAt }` com índice
+  TTL em `expiresAt` (30 dias, renovado no uso — só quando a última renovação
+  tem mais de um dia, deduzido de `expiresAt`, para não escrever a cada
+  request; o `lastSeenAt` do usuário sai na mesma passada). Sem
+  `express-session`, `passport` ou JWT. Parse do cookie à mão
+  (`server/cookies.js`, testado); a escrita é o `res.cookie` do próprio
+  Express. `Secure` vem de `BASE_URL` começar com `https:` — não de `NODE_ENV`.
+  `sessions` é a única coleção com BSON `Date` (o TTL só enxerga `Date`).
 
-- **Coleção `users`**: `{ _id: <sub do Google>, email, name, picture, handle,
-  role, createdAt, lastSeenAt }`. `handle` derivado da parte local do e-mail
-  (`bcesar97.bc` → `bcesar97-bc`), único, editável depois no perfil. Foto do
-  Google guardada como URL — é servida por eles, não passa pelo nosso host.
-  Ganha também `nickname` (Apelido, editável no perfil — é o que a splash usa
-  para personalizar o título) e `gender` (`'m'|'f'|null`, também do perfil). O
-  limite de tamanho do `nickname` mora em `server/limits.js`, como todo número
-  compartilhado entre zod e `$jsonSchema` — nunca repetido nos dois.
+- ✅ **Allowlist administrável pelo app** — o pedido central, e está de pé:
+  liberar um e-mail do celular, sem tocar em `.env` nem em console.
+  - Coleção `invites { _id: <e-mail em minúsculas>, invitedBy, createdAt }`.
+  - No callback, o e-mail do `id_token` precisa estar em `users` **ou** em
+    `invites`; senão o servidor redireciona para `/?auth=nao-convidado&email=…`
+    e a tela de entrada mostra "sua conta ainda não foi convidada (e-mail)".
+    Nada é criado. Cancelar no Google → `?auth=cancelado`; qualquer outra falha
+    → `?auth=erro`. O callback **nunca** responde JSON: é uma navegação.
+  - Bootstrap: `ADMIN_EMAIL` no `.env`, **com fallback no código**
+    (`bcesar97.bc@gmail.com`, em `env.js`) — app pessoal, zero configuração
+    local. A conta com esse e-mail ganha `role: 'admin'` (também num usuário
+    que já existia como `user`: o próximo login promove). Só o admin vê, no
+    menu da conta, o item **Convidar**: um diálogo com campo de e-mail
+    (`POST /api/v1/invites`, 403 para não-admin), a lista de convidados com
+    "já entrou"/"convidado em …" e **Revogar** (`DELETE /api/v1/invites/:email`;
+    não derruba quem já entrou — para isso, apagar as sessões, item 8).
+  - **E-mail é sempre normalizado** (`identity.js`) antes de comparar ou
+    gravar — no `_id` do convite, no `ADMIN_EMAIL`, no `email` do token, no
+    `:email` do DELETE.
 
-- **O que muda no código que já existe** — o ponto de contato é pequeno e já
-  estava marcado:
-  - `server/books.js:9`: `owner()` vira `owner(req)` → `req.user._id`, em cinco
-    call sites (GET, POST ×2, PATCH ×2, DELETE). No POST, o `userId` é
-    escrito **antes** do spread do valor validado, de propósito: nada que
-    venha do cliente sobrescreve o dono.
-  - Middleware `requireUser` (lê o cookie, busca a sessão, põe `req.user`)
-    montado em `/api/v1`, com `401` JSON. `/api/health` continua fora.
-  - `src/data/api.js`: `401` faz o `list()` **abortar o laço de páginas** (não
-    só a página corrente) e o `main.js` mostra a tela de entrada — um
-    `<section>` com nome do app, uma linha de explicação e o botão "Entrar com
-    Google". `GET /api/v1/users/me` é chamado antes do `api.list()`.
-    **Já existe consumidor**: `src/data/user.js` (`me()`) chama essa rota para
-    personalizar o título da splash e hoje trata *qualquer* erro (404, porque
-    a rota não existe ainda) como `null`. Quando a rota nascer com `401` para
-    visitante, `401 -> null` continua sendo a resposta certa — não precisa
-    mudar `user.js`, só a splash passa a mostrar o nome de verdade.
-  - **Rotas de `/auth` registradas antes do fallback do SPA**
-    (`server/index.js:50`, o `app.get(/^(?!\/api\/).*/)`), senão o callback
-    recebe `index.html`.
-  - `Sair`: `POST /auth/logout` apaga a sessão e o cookie.
+- ✅ **Coleção `users`**: `{ _id: <sub do Google>, email, name, picture, handle,
+  role, nickname, gender, createdAt, lastSeenAt }`. `handle` derivado da parte
+  local do e-mail (`bcesar97.bc` → `bcesar97-bc`; diacríticos caem, símbolos
+  viram hifen; colisão → `-2`, `-3`), único. Foto do Google como URL.
+  **`nickname` e `gender` nascem `null`** — a personalização da splash vem
+  quando o perfil (item 4, bloco "Perfil — a tela") deixar a pessoa escolher o
+  apelido; até lá o título é o genérico. Limites de `nickname`/`handle`/`email`
+  em `server/limits.js`.
+  `users` também é `additionalProperties: false`: **campo novo de perfil é
+  deploy em dois passos**, como no livro.
 
-- **Migração, nesta ordem**: (1) entrar uma vez para o `users` nascer e o `sub`
-  ficar conhecido; (2) `db.mjs migrate --user <sub>` para carimbar os livros
-  que hoje têm `userId: null`; (3) apertar `userId` para `bsonType: 'string'`
-  no `schema.js` (o TODO está lá) e rodar `db.mjs setup`. Na ordem inversa, o
-  `setup` se recusa a aplicar (o `check` acusa os `null`), o que é o
-  comportamento certo.
+- ✅ **O que mudou no código que já existia**:
+  - `owner()` virou `owner(req)` → `req.user._id` nos seis usos de `books.js`.
+    No POST o `userId` foi movido para **depois** do spread do valor validado —
+    hoje o zod já faz strip, mas a ordem é o que segura se um dia `userId`
+    entrar no shape.
+  - `requireUser` (`session.js`) montado em `/api/v1` logo depois do guarda de
+    banco (extraído em `ensureDb(onFail)`: JSON 503 para a API, redirect para
+    `/auth`), com `401 { error }` e `Cache-Control: no-store`. `/api/health`
+    fora.
+  - `src/data/api.js` ganhou `ApiError` com `status`; `me()` (`user.js`)
+    devolve `null` **só no 401** e relança o resto — é assim que o boot separa
+    visitante de servidor fora. **`me()` é chamado uma vez** e a promise é
+    compartilhada entre a splash (que só espera até `PREP_MS`) e o boot (que
+    espera de verdade). Visitante: a cena 3D **nem inicializa**; a splash sai
+    revelando o gate (mesmo fundo, sem costura). O botão de tema continua
+    usável no gate; os outros cantos ficam `hidden`.
+  - Rotas de `/auth` registradas **antes** do fallback do SPA, e o regex do
+    fallback exclui `/auth/` — provado com `npm run build && npm start`.
+  - Menu de conta no canto superior esquerdo (`src/ui/account.js`, ícone
+    genérico de avatar no sprite, padrão do `sortMenu.js` — que teve as classes
+    renomeadas para `.menu*`), com quem está logado, **Convidar** (admin) e
+    **Sair** (`POST /auth/logout` + `location.replace('/')`).
 
-- Ainda em `db.mjs setup`: criar as coleções `users`, `sessions` e `invites`
-  com um `$jsonSchema` mínimo cada (o mesmo mecanismo do `books`) e os índices
-  (`sessions.expiresAt` TTL, `users.email` único, `users.handle` único).
+- ✅ **`db.mjs`** ganhou o registro `COLLECTIONS` (schema + índices com opções,
+  lido também pelo `db.js` — o mesmo objeto nos dois evita
+  `IndexOptionsConflict`), `check`/`setup` cobrindo as quatro coleções, e o
+  comando **`claim --user <sub> [--local] [--dry-run]`**, que carimba os livros
+  com `userId: null`. Existe separado do `migrate` porque `migrate` é cópia
+  entre bancos e recusa `--local`. Proteções: exige `--user` no formato de
+  `sub` (não aceita e-mail), e o usuário precisa existir no alvo (o `sub` é
+  real e a estante vai para alguém que consegue entrar).
+
+- ✅ **Migração**: `userId` apertado para `bsonType: 'string'` +
+  `pattern: SUB_RE` e `setup` aplicado no local e no Atlas. Na data (18/08/2026)
+  as duas coleções `books` estavam **vazias**, então não houve `claim` a fazer;
+  o comando fica pronto para o dia em que houver livro sem dono (ex.: um
+  `migrate` de um dump antigo sem `--user`).
+
+- **Testes** (`node --test`): `cookies`, `oidc` (token fabricado: ok, `iss`,
+  `aud`, `exp`, `email_verified`, malformado, skew), `identity` (handles,
+  truncamento, sufixo), `gate` (`authFlagFromSearch`).
 
 ## 4. Perfil e amigos
 
@@ -236,16 +263,48 @@ vê.** A allowlist *é* o convite; não há pedido de amizade, aprovação, bloq
 Se um dia isso apertar, uma coleção `follows` entra na frente sem mexer no
 resto.
 
-- **API**: `GET /api/v1/users/me`; `GET /api/v1/users` (lista de todo mundo,
-  com `handle`, `name`, `picture` e contagens); `GET /api/v1/users/:handle/books`
-  — a **mesma** listagem paginada de `books.js`, com o filtro
-  `{ userId: <do handle> }`, somente leitura. Escrita continua só em
-  `/api/v1/books` e sempre com `{ _id, userId: req.user._id }` no filtro.
+- **API**: `GET /api/v1/users/me` (✅ item 3); `GET /api/v1/users` (lista de
+  todo mundo, com `handle`, `name`, `picture` e contagens);
+  `GET /api/v1/users/:handle/books` — a **mesma** listagem paginada de
+  `books.js`, com o filtro `{ userId: <do handle> }`, somente leitura. Escrita
+  continua só em `/api/v1/books` e sempre com `{ _id, userId: req.user._id }`
+  no filtro (✅ já é assim). **Perfil**: `PATCH /api/v1/users/me` para
+  `nickname`, `gender` e `handle` — campos já existem em `users`, nascem
+  `null`; entrada validada por zod (`validateProfile`, na convenção
+  `{ ok, value | error }`) com os limites de `limits.js`; `handle` duplicado →
+  409 com mensagem de formulário. A resposta é o usuário atualizado, no mesmo
+  formato de `GET /users/me`.
+
+- **Perfil — a tela** (é o que faz a splash valer): hoje `nickname` e `gender`
+  existem no documento mas ninguém consegue preenchê-los, então todo mundo vê
+  o título genérico "Estante Virtual". Mesma casca do diálogo de convites
+  (`.panel--left`, sheet no celular), aberta pelo item **Perfil** do menu de
+  conta, com três campos:
+  - **Apelido** (`nickname`, texto até `MAX.nickname`) — a dica diz para que
+    serve: "é assim que a estante te chama na abertura". Abaixo do campo, uma
+    **prévia ao vivo** do título com o `splashTitle()` que já existe: "Estante
+    Virtual **do Bruno**". Vazio = título genérico.
+  - **Gênero** (`gender`) — três opções: *masculino* (`'m'` → "do"),
+    *feminino* (`'f'` → "da"), *prefiro não dizer* (`null` → "de"). Serve
+    **só** para a preposição da splash, e a tela diz isso; `null` é um estado
+    legítimo, não "falta preencher".
+  - **Handle** (`handle`) — o identificador da URL da estante (`?u=<handle>`,
+    abaixo); `HANDLE_RE` no `pattern` do campo, e "já em uso" vindo do 409.
+  - Salvar → `PATCH /users/me` → o `me()` seguinte já vem personalizado, e a
+    próxima abertura mostra o apelido. Nada de reload: fechar o diálogo basta.
+  - **Quando aparece**: no **primeiro login** (`created: true` em
+    `resolveLogin`, exposto ao cliente como um flag no `GET /users/me` ou como
+    `?welcome=1` no redirect do callback — decidir na implementação; o
+    redirect é mais simples e o `authFlagFromSearch` já lê a URL) o diálogo de
+    Perfil abre sozinho depois da splash, com o **Apelido já preenchido com o
+    `given_name` do Google** como sugestão (o `id_token` traz `given_name`;
+    `verifyClaims` passa a extraí-lo). A pessoa confirma ou muda, e a estante
+    aparece atrás. Fechar sem salvar é permitido (título genérico até
+    preencher pelo menu). Nas visitas seguintes, só pelo menu.
 - **Cliente**:
-  - O canto superior esquerdo é o único livre (`index.html`: FAB no superior
-    direito, ordenação no inferior esquerdo, tema no inferior direito, chips
-    das estantes no topo-centro). Ali vai o **avatar**, que abre um menu:
-    *Minha estante · Amigos · Convidar (admin) · Sair*.
+  - O canto superior esquerdo já tem o botão de conta (✅ item 3:
+    `src/ui/account.js`, ícone genérico de avatar, menu com *Convidar (admin) ·
+    Sair*). Aqui ele ganha *Perfil · Minha estante · Amigos*.
   - **Amigos** é uma lista simples: foto, nome, "lendo agora: *título*",
     "N lidos em 2026". Tocar abre a estante da pessoa.
   - **Modo leitura**: a estante de outra pessoa é a mesma cena, com o FAB
@@ -283,8 +342,9 @@ A ordem aqui é a do que dá mais prazer por hora investida.
   todas as capas baixadas); o dia em que isso pesar, trocar para esperar só a
   ESTRUTURA montada (livros posicionados, capas chegando por trás da estante
   já revelada) — o teto `MAX_WAIT_MS` já cobre servidor lento nos dois casos.
-- **Cabeçalho/perfil** (item 4) e a tela de entrada do login (item 3) — essa é
-  a tela pós-splash para quem não está autenticado, não a splash em si.
+- ✅ **Tela de entrada do login** (`#gate`, item 3): a tela pós-splash para quem
+  não está autenticado — logo, nome do app, uma linha e "Entrar com Google",
+  com o aviso de "não convidada" quando é o caso. **Perfil** (item 4) fica.
 - **Cartão de detalhes** mais rico: capa grande, datas em texto ("lido em 12
   dias, em março"), estrelas, review com tipografia de página.
 - **Painel de cadastro no celular**: hoje funciona; o que falta é fluidez —
@@ -303,12 +363,12 @@ A ordem aqui é a do que dá mais prazer por hora investida.
 O que fica é o que protege dados de outras pessoas dentro do app; o resto sai
 do roteiro.
 
-- **Autorização em toda escrita**: filtro sempre `{ _id, userId: req.user._id }`.
+- ✅ **Autorização em toda escrita**: filtro sempre `{ _id, userId: req.user._id }`.
   Sem isso, qualquer amigo edita o livro de outro sabendo o id. É a única
-  regra nova que não é opcional.
+  regra nova que não é opcional — e já vale desde o item 3.
 - Leitura de estante alheia **só** pela rota própria e **só** logado. Não
   existe estante pública.
-- **Cookie `httpOnly`** (item 3). **XSS**: toda string de usuário chega ao DOM
+- ✅ **Cookie `httpOnly`** (item 3). **XSS**: toda string de usuário chega ao DOM
   por `textContent`, `innerHTML` proibido — a regra já vale e o cartão de
   detalhes é o lugar que mais importa, porque é onde a review de *outra
   pessoa* aparece.

@@ -1,18 +1,24 @@
-import { request } from './api.js';
+import { request, ApiError } from './api.js';
 
 /**
- * Usuario da sessao, ou `null`. Hoje a rota nao existe (o login e o item 3 do
- * `steps.md`) e o servidor responde 404 — por isso QUALQUER erro vira `null` em
- * vez de estourar: quem chama trata "sem usuario" como o caso normal. Quando o
- * login entrar, a rota passa a responder 401 para visitante, e 401 -> `null`
- * continua sendo exatamente a resposta certa.
+ * Usuario da sessao, ou `null` quando NAO ha sessao (401). Qualquer outro
+ * erro — servidor fora, 503 do banco — sobe: e o `main.js` que decide entre a
+ * tela de entrada (visitante) e o toast (servidor com problema), e ele precisa
+ * dos dois casos separados. Quem so quer "tem alguem?" (a splash) ja engole a
+ * rejeicao por conta propria.
  *
- * @returns {Promise<{ nickname?: string, gender?: 'm'|'f'|null }|null>}
+ * @returns {Promise<{ _id: string, email: string, name: string, picture: string|null,
+ *   handle: string, role: 'admin'|'user', nickname: string|null,
+ *   gender: 'm'|'f'|null }|null>}
  */
 export async function me() {
   try {
     return await request('/api/v1/users/me');
-  } catch {
-    return null;
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return null;
+    throw err;
   }
 }
+
+/** Encerra a sessao no servidor e apaga o cookie. Quem chama recarrega a pagina. */
+export const logout = () => request('/auth/logout', { method: 'POST' });

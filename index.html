@@ -152,10 +152,65 @@
       </form>
     </div>
 
+    <!-- Canto superior esquerdo: a conta. Um icone generico de avatar (mesmo
+         traco dos outros cantos) abre o menu — Convidar (so admin) e Sair. -->
+    <div class="corner corner--top-left">
+      <button
+        id="account"
+        class="fab"
+        type="button"
+        aria-expanded="false"
+        aria-controls="account-menu"
+        aria-label="Conta"
+        title="Conta"
+      >
+        <svg class="icon" aria-hidden="true"><use href="#i-user" /></svg>
+      </button>
+      <div id="account-menu" class="menu menu--down" role="menu" aria-label="Conta" hidden></div>
+    </div>
+
+    <!-- Convites: a allowlist administravel pelo app. Mesma casca do painel de
+         cadastro (transicoes, sheet no celular), aberta a esquerda. -->
+    <div
+      id="invites"
+      class="panel panel--left"
+      role="dialog"
+      aria-labelledby="invites-title"
+      aria-modal="false"
+    >
+      <header class="panel__head">
+        <h2 id="invites-title">Convidar</h2>
+        <button id="invites-close" class="icon-btn" type="button" aria-label="Fechar">
+          <svg class="icon" aria-hidden="true"><use href="#i-close" /></svg>
+        </button>
+      </header>
+
+      <form id="invite-form" class="form" novalidate>
+        <div class="field">
+          <label for="invite-email">E-mail</label>
+          <input
+            id="invite-email"
+            type="email"
+            autocomplete="off"
+            inputmode="email"
+            placeholder="amigo@gmail.com"
+            required
+          />
+          <p class="hint">A pessoa entra com a conta do Google desse e-mail.</p>
+        </div>
+        <p id="invite-msg" class="msg msg--error" role="alert" hidden></p>
+        <div class="actions">
+          <button type="submit" class="btn btn--primary" id="invite-send">Convidar</button>
+        </div>
+      </form>
+
+      <ul id="invite-list" class="invites" aria-label="Convidados"></ul>
+    </div>
+
     <!-- Canto inferior esquerdo: o botao de icone revela "Ordenar por", que abre
          o popover com os criterios. -->
     <div class="corner corner--left">
-      <div id="sort-menu" class="sortmenu" role="menu" aria-label="Ordenar por" hidden></div>
+      <div id="sort-menu" class="menu" role="menu" aria-label="Ordenar por" hidden></div>
       <button
         id="sort-by"
         class="pill"
@@ -194,6 +249,19 @@
     <aside id="details" class="details" aria-live="off" hidden></aside>
 
     <p id="live" class="sr-only" role="status" aria-live="polite"></p>
+
+    <!-- Tela de entrada, para quem nao esta logado: aparece quando a splash sai.
+         Markup estatico como a splash; o unico texto dinamico e o aviso, por
+         `textContent`. O botao e um link — nenhum script do Google no cliente. -->
+    <section id="gate" class="gate" aria-labelledby="gate-title" hidden>
+      <div class="gate__card">
+        <svg class="gate__logo" aria-hidden="true"><use href="#i-logo" /></svg>
+        <h1 id="gate-title" class="gate__title">Estante Virtual</h1>
+        <p class="gate__lead">Sua estante de livros em 3D — e a dos seus amigos.</p>
+        <a class="btn btn--primary gate__enter" href="/auth/google">Entrar com Google</a>
+        <p id="gate-msg" class="msg msg--error gate__msg" role="alert" hidden></p>
+      </div>
+    </section>
 
     <!-- Markup estatico de proposito: a splash precisa estar no HTML para a
          PRIMEIRA pintura ja nascer coberta (montada pelo JS, o canvas vazio
@@ -261,6 +329,22 @@
             d="M12 2v2M12 20v2M2 12h2M20 12h2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"
           />
         </g>
+      </symbol>
+      <symbol id="i-user" viewBox="0 0 24 24">
+        <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <circle cx="12" cy="8.5" r="3.6" />
+          <path d="M4.5 20a7.5 7.5 0 0 1 15 0" />
+        </g>
+      </symbol>
+      <symbol id="i-logout" viewBox="0 0 24 24">
+        <path
+          d="M10 4H5v16h5M14 8l4 4-4 4M18 12H9"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        />
       </symbol>
       <symbol id="i-moon" viewBox="0 0 24 24">
         <path

@@ -19,8 +19,11 @@ export default defineConfig({
     },
   },
   server: {
+    // `/auth` tambem: o botao "Entrar com Google" e um link para `/auth/google`,
+    // e o callback do Google volta em `BASE_URL` (= este servidor, em dev).
     proxy: {
       '/api': { target: 'http://127.0.0.1:3000', changeOrigin: false },
+      '/auth': { target: 'http://127.0.0.1:3000', changeOrigin: false },
     },
   },
 });

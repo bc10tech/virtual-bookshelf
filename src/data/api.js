@@ -6,23 +6,37 @@
 
 const BASE = '/api/v1/books';
 
+/**
+ * Erro de API com o status junto: `message` continua sendo o texto que o
+ * formulario mostra (vem do servidor, em portugues), e `status` e o que deixa
+ * o `main.js` distinguir "visitante" (401) de "servidor fora" (0) sem parsear
+ * mensagem. Rede fora e `status: 0`.
+ */
+export class ApiError extends Error {
+  constructor(message, status) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export async function request(url, options) {
   let res;
   try {
     res = await fetch(url, options);
   } catch {
-    throw new Error('Sem conexao com o servidor.');
+    throw new ApiError('Sem conexao com o servidor.', 0);
   }
 
   if (res.status === 204) return null;
 
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error || `Erro ${res.status}`);
+  if (!res.ok) throw new ApiError(body?.error || `Erro ${res.status}`, res.status);
   return body;
 }
 
-const json = (body) => ({
-  method: 'POST',
+export const json = (body, method = 'POST') => ({
+  method,
   headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify(body),
 });
@@ -58,10 +72,7 @@ export async function list() {
 export const add = (record) => request(BASE, json(record));
 
 export const update = (id, patch) =>
-  request(`${BASE}/${encodeURIComponent(id)}`, {
-    ...json(patch),
-    method: 'PATCH',
-  });
+  request(`${BASE}/${encodeURIComponent(id)}`, json(patch, 'PATCH'));
 
 export const remove = (id) =>
   request(`${BASE}/${encodeURIComponent(id)}`, { method: 'DELETE' });

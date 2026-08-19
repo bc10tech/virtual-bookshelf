@@ -4,7 +4,8 @@
  *
  *   node --env-file-if-exists=.env scripts/db.mjs check   [--local]
  *   node --env-file-if-exists=.env scripts/db.mjs setup   [--local]
- *   node --env-file-if-exists=.env scripts/db.mjs migrate [--dry-run] [--user <id>]
+ *   node --env-file-if-exists=.env scripts/db.mjs migrate [--dry-run] [--user <sub>]
+ *   node --env-file-if-exists=.env scripts/db.mjs claim   --user <sub> [--local] [--dry-run]
  *
  * Por que um script e nao o boot da aplicacao: aplicar ou trocar o validador e
  * `collMod`, que exige `dbAdmin`. O usuario que a aplicacao usa e `readWrite`
@@ -15,7 +16,7 @@
  * historico do shell e na lista de processos da maquina inteira.
  *
  *   MONGODB_URI        aplicacao, `readWrite`   (o alvo padrao de `check`)
- *   MONGODB_ADMIN_URI  operacao,  `dbAdmin`     (alvo de `setup` e `migrate`)
+ *   MONGODB_ADMIN_URI  operacao,  `dbAdmin`     (alvo de `setup`, `migrate`, `claim`)
  *   MONGODB_LOCAL_URI  origem da migracao       (default: container local)
  *   MONGODB_DB         nome do banco            (default: virtual_bookshelf)
  *
@@ -24,9 +25,10 @@
  */
 
 import { MongoClient } from 'mongodb';
-import { VALIDATION, INDEXES, COLLECTION } from '../server/schema.js';
+import { COLLECTIONS, validationFor } from '../server/schema.js';
+import { SUB_RE } from '../server/limits.js';
 
-const SCHEMA = VALIDATION.validator.$jsonSchema;
+const BOOKS = 'books';
 const DB_NAME = process.env.MONGODB_DB || 'virtual_bookshelf';
 const LOCAL_URI = process.env.MONGODB_LOCAL_URI || 'mongodb://127.0.0.1:27017';
 
@@ -73,7 +75,8 @@ function target(needsAdmin) {
  * nao serve num M0: o aviso vai para o log do mongod, e o download desse log e
  * recurso de cluster dedicado. Ali, `warn` e "desliga a barreira e nao conta".)
  */
-const findNonConforming = (col) => col.find({ $nor: [{ $jsonSchema: SCHEMA }] }).toArray();
+const findNonConforming = (col, schema) =>
+  col.find({ $nor: [{ $jsonSchema: schema }] }).toArray();
 
 /**
  * O `$nor` diz QUAIS documentos reprovam, nao POR QUE. Como o schema e uma
@@ -81,15 +84,15 @@ const findNonConforming = (col) => col.find({ $nor: [{ $jsonSchema: SCHEMA }] })
  * a culpa — que e a diferenca entre "3 divergentes" e "3 divergentes: falta
  * coverSource".
  */
-async function explain(col, doc) {
+async function explain(col, schema, doc) {
   const reasons = [];
 
-  const extra = Object.keys(doc).filter((k) => !(k in SCHEMA.properties));
+  const extra = Object.keys(doc).filter((k) => !(k in schema.properties));
   if (extra.length) reasons.push(`campo desconhecido: ${extra.join(', ')}`);
 
-  for (const [key, sub] of Object.entries(SCHEMA.properties)) {
+  for (const [key, sub] of Object.entries(schema.properties)) {
     if (!(key in doc)) {
-      if (SCHEMA.required.includes(key)) reasons.push(`${key}: ausente`);
+      if (schema.required.includes(key)) reasons.push(`${key}: ausente`);
       continue;
     }
     const conforms = await col.countDocuments(
@@ -105,9 +108,10 @@ async function explain(col, doc) {
   return reasons;
 }
 
-async function report(col) {
+/** Relatorio de uma colecao. Devolve quantos documentos o validador reprovaria. */
+async function report(col, schema) {
   const total = await col.countDocuments({});
-  const bad = await findNonConforming(col);
+  const bad = await findNonConforming(col, schema);
 
   console.log(`  documentos: ${total}`);
   if (!bad.length) {
@@ -118,16 +122,34 @@ async function report(col) {
   console.log(`  divergentes: ${bad.length}  ✗\n`);
   for (const doc of bad.slice(0, 20)) {
     console.log(`    ${doc._id}`);
-    for (const reason of await explain(col, doc)) console.log(`      · ${reason}`);
+    for (const reason of await explain(col, schema, doc)) console.log(`      · ${reason}`);
   }
   if (bad.length > 20) console.log(`    … e mais ${bad.length - 20}`);
   return bad.length;
 }
 
+/** O validador que esta NA colecao hoje (ou `null` se a colecao nao existe). */
+async function collectionInfo(db, name) {
+  const [info] = await db.listCollections({ name }).toArray();
+  return info ?? null;
+}
+
+/** Percorre o registro inteiro; devolve a soma dos divergentes. */
+async function reportAll(db) {
+  let bad = 0;
+  for (const [name, { schema }] of Object.entries(COLLECTIONS)) {
+    const info = await collectionInfo(db, name);
+    const active = Boolean(info?.options?.validator?.$jsonSchema);
+    console.log(`\n  [${name}]  validador: ${info ? (active ? 'sim' : 'NAO') : '(colecao nao existe)'}`);
+    bad += await report(db.collection(name), schema);
+  }
+  return bad;
+}
+
 async function check() {
   const client = await open(target(false), 'alvo');
   try {
-    return await report(client.db(DB_NAME).collection(COLLECTION));
+    return await reportAll(client.db(DB_NAME));
   } finally {
     await client.close();
   }
@@ -140,10 +162,11 @@ async function setup() {
   const db = client.db(DB_NAME);
 
   try {
-    // Pre-check ANTES de aplicar. Com `validationLevel: 'strict'`, um documento
-    // pre-existente invalido ficaria impatchavel — o update valida o documento
-    // inteiro depois da mudanca, entao ate um PATCH so da nota reprovaria.
-    const bad = await report(db.collection(COLLECTION));
+    // Pre-check de TODAS antes de aplicar em qualquer uma. Com
+    // `validationLevel: 'strict'`, um documento pre-existente invalido ficaria
+    // impatchavel — o update valida o documento inteiro depois da mudanca,
+    // entao ate um PATCH so da nota reprovaria.
+    const bad = await reportAll(db);
     if (bad) {
       die(
         'ha documentos que o validador reprovaria. Conserte-os primeiro:\n' +
@@ -151,32 +174,38 @@ async function setup() {
       );
     }
 
-    const exists = await db.listCollections({ name: COLLECTION }).hasNext();
-    if (exists) {
-      // `collMod` e o unico caminho para uma colecao que ja existe — e o unico
-      // que exige `dbAdmin`. Se falhar com Unauthorized, a credencial esta certa
-      // para a aplicacao e errada para esta operacao.
-      await db.command({ collMod: COLLECTION, ...VALIDATION });
-      console.log('  validador: atualizado via collMod');
-    } else {
-      await db.createCollection(COLLECTION, VALIDATION);
-      console.log('  validador: colecao criada com validator');
-    }
+    for (const [name, { schema, indexes }] of Object.entries(COLLECTIONS)) {
+      console.log(`\n  [${name}]`);
+      const validation = validationFor(schema);
 
-    for (const { key } of INDEXES) {
-      const name = await db.collection(COLLECTION).createIndex(key);
-      console.log(`  indice: ${name}`);
-    }
+      if (await collectionInfo(db, name)) {
+        // `collMod` e o unico caminho para uma colecao que ja existe — e o unico
+        // que exige `dbAdmin`. Se falhar com Unauthorized, a credencial esta
+        // certa para a aplicacao e errada para esta operacao.
+        await db.command({ collMod: name, ...validation });
+        console.log('  validador: atualizado via collMod');
+      } else {
+        await db.createCollection(name, validation);
+        console.log('  validador: colecao criada com validator');
+      }
 
-    // Ler de volta, em vez de confiar no retorno do comando.
-    const [info] = await db.listCollections({ name: COLLECTION }).toArray();
-    const applied = Boolean(info?.options?.validator?.$jsonSchema);
-    console.log(
-      `\n  validador ativo: ${applied ? 'sim' : 'NAO'}` +
-        `  nivel: ${info?.options?.validationLevel ?? '-'}` +
-        `  acao: ${info?.options?.validationAction ?? '-'}`,
-    );
-    if (!applied) die('o validador nao esta na colecao depois do comando.');
+      // `options` vem do registro junto da chave — ver o comentario de
+      // `COLLECTIONS` sobre `IndexOptionsConflict`.
+      for (const { key, options } of indexes) {
+        const idx = await db.collection(name).createIndex(key, options);
+        console.log(`  indice: ${idx}${options ? `  ${JSON.stringify(options)}` : ''}`);
+      }
+
+      // Ler de volta, em vez de confiar no retorno do comando.
+      const info = await collectionInfo(db, name);
+      const applied = Boolean(info?.options?.validator?.$jsonSchema);
+      console.log(
+        `  validador ativo: ${applied ? 'sim' : 'NAO'}` +
+          `  nivel: ${info?.options?.validationLevel ?? '-'}` +
+          `  acao: ${info?.options?.validationAction ?? '-'}`,
+      );
+      if (!applied) die(`o validador nao esta em \`${name}\` depois do comando.`);
+    }
   } finally {
     await client.close();
   }
@@ -196,12 +225,13 @@ async function migrate() {
   const to = await open(toUri, 'destino');
 
   try {
-    const src = from.db(DB_NAME).collection(COLLECTION);
-    const dst = to.db(DB_NAME).collection(COLLECTION);
+    const src = from.db(DB_NAME).collection(BOOKS);
+    const dst = to.db(DB_NAME).collection(BOOKS);
+    const schema = COLLECTIONS[BOOKS].schema;
 
     // Sem o validador no destino, a migracao perde a unica prova de que os
     // documentos chegaram intactos. `setup` primeiro, sempre.
-    const [info] = await to.db(DB_NAME).listCollections({ name: COLLECTION }).toArray();
+    const info = await collectionInfo(to.db(DB_NAME), BOOKS);
     if (!info?.options?.validator) {
       die('o destino nao tem o validador aplicado. Rode `db.mjs setup` antes de migrar.');
     }
@@ -210,7 +240,7 @@ async function migrate() {
     console.log(`\n  a copiar: ${docs.length} documento(s)`);
     if (userId) console.log(`  userId: null -> ${JSON.stringify(userId)}`);
 
-    const bad = await findNonConforming(src);
+    const bad = await findNonConforming(src, schema);
     if (bad.length) die(`${bad.length} documento(s) na origem reprovariam no destino. Rode \`check --local\`.`);
 
     if (!docs.length) return console.log('  nada a fazer.');
@@ -254,23 +284,75 @@ async function migrate() {
     const [srcCount, dstCount] = [await src.countDocuments({}), await dst.countDocuments({})];
     console.log(`\n  origem: ${srcCount}  destino: ${dstCount}  ${srcCount === dstCount ? '✓' : '✗'}`);
     console.log('  conferindo o destino:');
-    await report(dst);
+    await report(dst, schema);
   } finally {
     await from.close();
     await to.close();
   }
 }
 
+// ---------------------------------------------------------------------- claim
+
+/**
+ * Carimba os livros SEM dono (`userId: null`, os da fase sem login) com o
+ * `sub` de um usuario. E o passo 2 da migracao do item 3: depois dele o
+ * `userId` de `books` pode ser apertado para `string` e o `setup` rodado.
+ *
+ * Existe separado do `migrate` porque `migrate` e copia entre bancos e recusa
+ * `--local` (origem e destino seriam o mesmo); este e uma escrita NO alvo — o
+ * container ou o Atlas, um de cada vez.
+ */
+async function claim() {
+  const dry = has('--dry-run');
+  const userId = valueOf('--user');
+  if (!userId) die('claim exige --user <sub> (o `sub` do Google, que aparece no log de login).');
+  if (!SUB_RE.test(userId)) {
+    die(`--user ${JSON.stringify(userId)} nao parece um \`sub\` do Google (so digitos). Nao e o e-mail.`);
+  }
+
+  const client = await open(target(true), 'alvo');
+  const db = client.db(DB_NAME);
+
+  try {
+    // O usuario precisa existir NESTE banco: e o que prova que o `sub` e real e
+    // que a estante vai para alguem que consegue entrar. Sem isso um typo no
+    // sub deixaria os livros com um dono que nunca vai existir.
+    const user = await db.collection('users').findOne({ _id: userId });
+    if (!user) die(`nao ha usuario ${userId} neste banco. Faca login uma vez apontando para ele primeiro.`);
+    console.log(`  usuario: ${user.email} (${user.role})`);
+
+    const books = db.collection(BOOKS);
+    const [orphans, mine, others] = await Promise.all([
+      books.countDocuments({ userId: null }),
+      books.countDocuments({ userId }),
+      books.countDocuments({ userId: { $nin: [null, userId] } }),
+    ]);
+    console.log(`\n  sem dono: ${orphans}   ja de ${userId}: ${mine}   de outros: ${others}`);
+
+    if (!orphans) return console.log('  nada a fazer.');
+    if (dry) return console.log('\n  --dry-run: nada foi escrito.');
+
+    const { modifiedCount } = await books.updateMany({ userId: null }, { $set: { userId } });
+    console.log(`  carimbados: ${modifiedCount}`);
+
+    console.log('\n  conferindo:');
+    await report(books, COLLECTIONS[BOOKS].schema);
+  } finally {
+    await client.close();
+  }
+}
+
 // ----------------------------------------------------------------------- main
 
-const COMMANDS = { check, setup, migrate };
+const COMMANDS = { check, setup, migrate, claim };
 
 if (!COMMANDS[command]) {
   die(
     'uso:\n' +
       '    node --env-file-if-exists=.env scripts/db.mjs check   [--local]\n' +
       '    node --env-file-if-exists=.env scripts/db.mjs setup   [--local]\n' +
-      '    node --env-file-if-exists=.env scripts/db.mjs migrate [--dry-run] [--user <id>]',
+      '    node --env-file-if-exists=.env scripts/db.mjs migrate [--dry-run] [--user <sub>]\n' +
+      '    node --env-file-if-exists=.env scripts/db.mjs claim   --user <sub> [--local] [--dry-run]',
   );
 }
 

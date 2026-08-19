@@ -165,6 +165,14 @@
   }
 }
 
+/* O espelho de rise-in, para o menu do canto SUPERIOR: cresce para baixo. */
+@keyframes drop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.86) translateY(-8px);
+  }
+}
+
 html,
 body {
   margin: 0;
@@ -253,8 +261,8 @@ body {
 /* -------------------------------------------------------------------- FAB --- */
 
 /* Estilo compartilhado por todos os botoes flutuantes: adicionar (topo-direito),
-   opcoes da estante (inferior-esquerdo) e tema (inferior-direito). A POSICAO nao
-   mora aqui — vem de `#fab` ou de `.corner`. */
+   conta (topo-esquerdo), opcoes da estante (inferior-esquerdo) e tema
+   (inferior-direito). A POSICAO nao mora aqui — vem de `#fab` ou de `.corner`. */
 .fab {
   width: 52px;
   height: 52px;
@@ -313,6 +321,15 @@ body {
   align-items: flex-end;
 }
 
+/* Canto superior esquerdo: o botao fica em cima e o menu cresce para baixo.
+   Mesma safe area do `#fab`, do outro lado. */
+.corner--top-left {
+  top: max(16px, env(safe-area-inset-top, 0px));
+  bottom: auto;
+  left: 16px;
+  align-items: flex-start;
+}
+
 .corner.is-hidden {
   transform: scale(0.7);
   opacity: 0;
@@ -345,14 +362,22 @@ body {
    linguagem de escala do FAB e do painel. `transform-origin` no canto inferior
    esquerdo e o que faz a animacao apontar para a origem do clique. */
 .corner--left .pill,
-.corner--left .sortmenu {
+.corner--left .menu {
   transform-origin: 0 100%;
   animation: rise-in 0.18s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
-/* ------------------------------------------------------- menu de ordenacao --- */
+/* O menu do canto de cima aponta para o botao acima dele. */
+.menu--down {
+  transform-origin: 0 0;
+  animation: drop-in 0.18s cubic-bezier(0.32, 0.72, 0, 1);
+}
 
-.sortmenu {
+/* ------------------------------------------------------------------- menu ---
+   Popover de itens: ordenacao (canto inferior esquerdo) e conta (superior
+   esquerdo). Mesma casca; a animacao de entrada vem das regras de canto acima. */
+
+.menu {
   min-width: 244px;
   max-height: min(58dvh, 420px);
   overflow-y: auto;
@@ -362,10 +387,9 @@ body {
   border-radius: var(--r-md);
   background: var(--surface);
   box-shadow: var(--shadow-lg);
-  /* A animacao vem da regra `.corner--left .sortmenu` acima. */
 }
 
-.sortmenu__item {
+.menu__item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -382,18 +406,49 @@ body {
   cursor: pointer;
 }
 
-.sortmenu__item:hover {
+.menu__item:hover {
   background: var(--surface-2);
 }
 
-.sortmenu__item[aria-checked='true'] {
+.menu__item[aria-checked='true'] {
   background: var(--accent);
   color: var(--accent-ink);
 }
 
-.sortmenu__dir {
+.menu__item .icon {
+  width: 18px;
+  height: 18px;
+  color: var(--ink-soft);
+}
+
+.menu__dir {
   font-size: 0.78rem;
   opacity: 0.75;
+  white-space: nowrap;
+}
+
+/* Cabecalho do menu de conta: quem esta logado. Nao e item — nao recebe foco. */
+.menu__who {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px 10px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+.menu__name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menu__email {
+  font-size: 0.78rem;
+  color: var(--ink-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -449,6 +504,14 @@ body {
   opacity: 1;
   visibility: visible;
   transition-delay: 0s;
+}
+
+/* A mesma casca aberta a partir do canto superior ESQUERDO (o dialogo de
+   convites nasce do botao de conta). */
+.panel--left {
+  right: auto;
+  left: 16px;
+  transform-origin: 0 0;
 }
 
 .panel__head {
@@ -511,6 +574,7 @@ button {
 input[type='search'],
 input[type='date'],
 input[type='number'],
+input[type='email'],
 textarea {
   width: 100%;
   min-height: 44px; /* alvo de toque confortavel */
@@ -1163,6 +1227,150 @@ textarea:user-invalid {
   transition: transform var(--splash-exit-ms) cubic-bezier(0.65, 0, 0.35, 1);
 }
 
+/* --------------------------------------------------------- tela de entrada ---
+   `#gate` (`src/ui/gate.js`): o que o visitante ve quando a splash sai. Cobre a
+   cena (que nem e inicializada sem login) com o mesmo fundo da splash, para a
+   saida dela nao ter costura. z-index 20: acima da cena e da vinheta, ABAIXO
+   dos botoes de canto (30) — o de tema continua usavel aqui; os outros o JS
+   esconde com `hidden`. */
+
+.gate {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: env(safe-area-inset-top, 0px) 16px var(--safe-b);
+  background: var(--bg);
+  color: var(--ink);
+  animation: pop-in 0.3s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.gate__card {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  width: min(400px, 100%);
+  padding: 32px 28px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.gate__logo {
+  width: clamp(72px, 16vmin, 112px);
+  height: clamp(72px, 16vmin, 112px);
+  color: var(--accent);
+}
+
+/* Bitter: e o nome do app, nao um rotulo de interface (mesma regra da splash). */
+.gate__title {
+  margin: 4px 0 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  font-size: 1.7rem;
+  line-height: 1.2;
+}
+
+.gate__lead {
+  margin: 0 0 12px;
+  font-size: 0.92rem;
+  color: var(--ink-soft);
+  text-wrap: balance;
+}
+
+/* `.btn` foi desenhado para <button>; num <a> falta o inline-flex e sobra o
+   sublinhado. */
+.gate__enter {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 46px;
+  padding: 0 22px;
+  text-decoration: none;
+}
+
+.gate__msg {
+  margin-top: 6px;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+
+/* --------------------------------------------------------------- convites ---
+   Lista do dialogo de convites (`src/ui/invites.js`), abaixo do formulario. */
+
+.invites {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.invites__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 4px 4px 8px;
+  border-radius: var(--r-sm);
+}
+
+.invites__item:hover {
+  background: var(--surface-2);
+}
+
+.invites__who {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+}
+
+.invites__email {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.invites__meta {
+  font-size: 0.74rem;
+  color: var(--ink-faint);
+}
+
+.invites__meta--in {
+  color: var(--accent);
+}
+
+.invites__revoke {
+  flex: none;
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.invites__revoke:hover {
+  border-color: color-mix(in srgb, var(--danger) 35%, var(--line));
+  color: var(--danger);
+}
+
+.invites__empty {
+  margin: 0;
+  padding: 6px 4px;
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+}
+
 /* ----------------------------------------------------------------- mobile --- */
 
 @media (max-width: 640px) {
@@ -1204,8 +1412,13 @@ textarea:user-invalid {
   input[type='search'],
   input[type='date'],
   input[type='number'],
+  input[type='email'],
   textarea {
     font-size: 16px;
+  }
+
+  .gate__card {
+    padding: 28px 22px;
   }
 }
 

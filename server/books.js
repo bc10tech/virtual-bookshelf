@@ -4,9 +4,11 @@ import { validateBook, isValidId } from './validate.js';
 
 export const router = Router();
 
-// userId fica fixo em null durante a fase 1 (sem login). Quando a
-// autenticacao entrar, isto vira `req.user.id` e todo o resto continua igual.
-const owner = () => null;
+// O dono e SEMPRE quem esta logado (`requireUser` ja rodou, montado em
+// `/api/v1`), e todo filtro de leitura e escrita leva `userId: owner(req)`:
+// e a unica regra de autorizacao do app — sem ela, qualquer amigo edita o
+// livro de outro sabendo o id.
+const owner = (req) => req.user._id;
 
 const bad = (res, error, code = 400) => res.status(code).json({ error });
 
@@ -62,7 +64,7 @@ router.get('/', async (req, res) => {
     if (!Number.isInteger(cursor)) return bad(res, 'cursor invalido');
   }
 
-  const filter = { userId: owner() };
+  const filter = { userId: owner(req) };
   if (cursor !== null) filter.order = { $gt: cursor };
 
   // Um a mais que o pedido: o excedente responde "tem proxima pagina?" sem
@@ -88,17 +90,20 @@ router.post('/', async (req, res) => {
   // `order` e sempre atribuido pelo servidor: aceitar o valor do cliente
   // permitiria colidir ou furar a fila de propositio.
   const last = await books()
-    .find({ userId: owner() })
+    .find({ userId: owner(req) })
     .sort({ order: -1 })
     .limit(1)
     .toArray();
   const order = last.length ? last[0].order + 1 : 0;
 
   const now = new Date().toISOString();
+  // `userId` DEPOIS do spread: nada que venha do cliente sobrescreve o dono.
+  // Hoje o zod ja faz strip de chave desconhecida, mas se um dia `userId`
+  // entrar no shape do zod, esta ordem e o que continua segurando.
   const doc = {
     _id: isValidId(req.body?.id) ? req.body.id : crypto.randomUUID(),
-    userId: owner(),
     ...parsed.value,
+    userId: owner(req),
     order,
     createdAt: now,
     updatedAt: now,
@@ -123,7 +128,7 @@ router.patch('/:id', async (req, res) => {
 
   // Quando so uma das datas vem no PATCH, a coerencia fim >= inicio precisa
   // ser conferida contra o que ja esta gravado.
-  const current = await books().findOne({ _id: req.params.id, userId: owner() });
+  const current = await books().findOne({ _id: req.params.id, userId: owner(req) });
   if (!current) return bad(res, 'nao encontrado', 404);
 
   const start = parsed.value.startDate ?? current.startDate;
@@ -135,7 +140,7 @@ router.patch('/:id', async (req, res) => {
   let doc;
   try {
     doc = await books().findOneAndUpdate(
-      { _id: req.params.id, userId: owner() },
+      { _id: req.params.id, userId: owner(req) },
       { $set: { ...parsed.value, updatedAt: new Date().toISOString() } },
       { returnDocument: 'after' },
     );
@@ -156,7 +161,7 @@ router.delete('/:id', async (req, res) => {
 
   const { deletedCount } = await books().deleteOne({
     _id: req.params.id,
-    userId: owner(),
+    userId: owner(req),
   });
   if (!deletedCount) return bad(res, 'nao encontrado', 404);
   res.status(204).end();

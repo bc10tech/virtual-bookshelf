@@ -31,6 +31,13 @@ export const MAX = {
   review: 2000,
   coverUrl: 400,
   reference: 100, // olKey e isbn seguem a mesma regra
+
+  // Documento de usuario (`users`) e de convite (`invites`).
+  email: 254, // RFC 5321
+  name: 200, // o `name` do Google, gravado como veio
+  picture: 2048, // URL da foto, servida pelo Google
+  handle: 32,
+  nickname: 40, // o que a splash usa no titulo
 };
 
 export const PAGES = { min: 1, max: 5000 };
@@ -62,3 +69,26 @@ export const ID_RE = /^[A-Za-z0-9-]{8,64}$/;
  * `new Date().toISOString()` em `books.js`, e o formato dele e fixo.
  */
 export const TIMESTAMP_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
+
+// --- identidade -----------------------------------------------------------
+
+/**
+ * E-mail: so a forma `algo@algo.algo`, sem espaco. A validade de verdade quem
+ * atesta e o Google (`email_verified`); aqui e so para o convite nao aceitar
+ * lixo. Sempre comparado e gravado em minusculas (`normalizeEmail`).
+ */
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** `handle`: minusculas, digitos e hifen, sem hifen nas pontas. Derivado do e-mail. */
+export const HANDLE_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
+
+/** O `sub` do Google e uma string numerica (a doc garante ate 255 caracteres). */
+export const SUB_RE = /^\d{1,255}$/;
+
+/** Token de sessao: 32 bytes aleatorios em hexadecimal (`session.js`). */
+export const SESSION_TOKEN_RE = /^[a-f0-9]{64}$/;
+
+export const ROLES = ['admin', 'user'];
+
+/** `null` tambem e valido no documento — "nao declarado" —, e a splash usa "de". */
+export const GENDERS = ['m', 'f'];

@@ -11,7 +11,12 @@ daí nasce uma estante nova, e chips numerados no topo alternam entre elas.
 
 Clicar num livro abre um cartão ao lado dele com a review e os detalhes, com um
 botão para editar ou excluir o registro. Os botões dos cantos inferiores ordenam
-a estante e alternam entre modo claro e escuro.
+a estante e alternam entre modo claro e escuro; o do canto superior esquerdo é a
+conta (convidar, sair).
+
+Entra-se com a conta do Google, e só quem foi convidado entra: o admin libera um
+e-mail pelo próprio app (menu da conta → Convidar), de qualquer aparelho, sem
+tocar em `.env` nem em console.
 
 ## Rodando
 
@@ -29,8 +34,25 @@ npm install && npm run dev
 - API: http://localhost:3000
 
 O `npm run dev` sobe o Express (porta 3000) e o Vite (porta 5173) juntos; o Vite
-faz proxy de `/api` para o Express. Para testar no celular pela rede local:
-`npm run dev -- --host`.
+faz proxy de `/api` e `/auth` para o Express. Para testar no celular pela rede
+local: `npm run dev -- --host` — mas o **login** por IP privado não funciona (o
+Google só aceita `localhost` ou https como redirect); no celular, só depois do
+deploy ou por um túnel https.
+
+### Login
+
+Copie `.env.example` para `.env` e preencha `GOOGLE_CLIENT_ID`,
+`GOOGLE_CLIENT_SECRET` e `BASE_URL`. No Google Cloud Console: um *OAuth client
+ID* do tipo *Web application*, com `<BASE_URL>/auth/google/callback` em
+*Authorized redirect URIs* (em dev, `http://localhost:5173/auth/google/callback`;
+para testar o build, também `http://localhost:3000/...`); escopos `openid`,
+`email`, `profile`. Com só esses escopos, publicar a tela de consentimento não
+exige verificação — e é preferível a deixá-la em *Testing*, que obrigaria a
+listar cada amigo também lá.
+
+`ADMIN_EMAIL` é o único e-mail que entra sem convite e vira admin (tem um
+padrão no código; ver `server/env.js`). Todo o resto entra pela allowlist:
+`invites`, administrada pelo app.
 
 ```bash
 npm run build && npm start
@@ -43,29 +65,38 @@ atende o site inteiro.
 npm test
 ```
 
-Roda `node --test` (sem dependência nova) sobre `test/`. Hoje cobre só
-`splashTitle` — é a única peça da splash sem DOM nem three.js, e portanto a
-única fácil de testar no Node puro.
+Roda `node --test` (sem dependência nova) sobre `test/`: as peças puras — o
+título da splash, o parse de cookie, a verificação do `id_token`, e-mail/handle
+e a leitura do `?auth=` da tela de entrada.
 
 ## Como está montado
 
 ```
-index.html          casca: canvas, FAB, painel-formulário, chips das estantes, splash de abertura
+index.html          casca: canvas, FAB, painel-formulário, conta + convites, chips, splash, tela de entrada
 server/             Express + driver oficial do MongoDB (sem Mongoose)
   db.js             conexão única; timeout e pool conforme o banco é local ou não
   limits.js         os limites que as DUAS validações dividem
   validate.js       validação de entrada (zod)
-  schema.js         validação do documento gravado ($jsonSchema) + índices
+  schema.js         validação do documento gravado ($jsonSchema) + registro de coleções e índices
   books.js          CRUD em /api/v1/books
-scripts/db.mjs      aplica o schema no banco e migra o acervo
+  env.js            variáveis do login (BASE_URL, GOOGLE_*, ADMIN_EMAIL), num lugar só
+  oidc.js           URL de autorização e verificação do id_token (puro)
+  cookies.js        parse do cabeçalho Cookie (puro)
+  identity.js       normalização de e-mail e derivação de handle (puro)
+  session.js        cookie vb.sid + coleção sessions; requireUser / requireAdmin
+  auth.js           /auth/google, /auth/google/callback, /auth/logout
+  users.js          /api/v1/users/me; criação da conta no primeiro login
+  invites.js        /api/v1/invites — a allowlist (só admin)
+scripts/db.mjs      aplica schema e índices, migra o acervo, carimba livros sem dono
 src/
   config.js         TODOS os números do projeto moram aqui
   assets/           fonte dos assets vetorizados (hoje só a logo; não vai pro build)
   scene/            three.js: renderer, câmera, estante, madeira, livros, capas, tweens
-  data/             acesso à API, busca na Open Library, ordenação, usuário (user.js)
-  ui/               painel, estrelas, paginador, cartão, menu de ordem, tema, splash de abertura
+  data/             acesso à API, busca na Open Library, ordenação, usuário, convites
+  ui/               painel, estrelas, paginador, cartão, menu de ordem, tema, splash,
+                    tela de entrada (gate), menu de conta, diálogo de convites
 public/             fonts/ (Bitter e Karla, SIL OFL) e favicon.svg (mesmo traço da logo)
-test/               node --test — hoje só splashTitle.js
+test/               node --test
 ```
 
 **Não há nenhum arquivo de modelo 3D.** A estante nasceu de um `bookshelf.obj`
@@ -167,9 +198,25 @@ node --env-file-if-exists=.env scripts/db.mjs check   # o que seria reprovado?
 node --env-file-if-exists=.env scripts/db.mjs setup   # aplica schema e índices
 ```
 
-Os dois aceitam `--local` para falar com o container. Há também
-`migrate [--dry-run] [--user <id>]`, que copia o acervo preservando `order` e
-`createdAt` — coisa que uma migração via `POST` destruiria.
+Os dois aceitam `--local` para falar com o container, e cobrem as quatro
+coleções (`books`, `users`, `sessions`, `invites`). Há também
+`migrate [--dry-run] [--user <sub>]`, que copia o acervo preservando `order` e
+`createdAt` — coisa que uma migração via `POST` destruiria — e
+`claim --user <sub> [--local] [--dry-run]`, que carimba os livros sem dono
+(`userId: null`, da fase sem login) com o `sub` de um usuário que já entrou.
+
+Dependências continuam as mesmas: o login com Google é `fetch` no endpoint de
+token e ~60 linhas de verificação de claims (`server/oidc.js`), sem biblioteca —
+o `id_token` chega pelo canal de trás, por TLS, e a spec dispensa a assinatura
+nesse caso.
+
+### Sessão e allowlist
+
+`vb.sid` é um cookie `httpOnly` com 32 bytes aleatórios; a sessão mora em
+`sessions` (TTL de 30 dias, renovado no uso). `users` guarda `sub` do Google,
+e-mail, `handle`, `role`, `nickname`/`gender` (perfil, ainda por vir). Quem entra
+precisa estar em `users` ou em `invites` — ou ser o `ADMIN_EMAIL`. Todo `/api/v1`
+exige sessão, e todo filtro leva `userId`: ninguém lê nem escreve livro de outro.
 
 ## Ferramentas de desenvolvimento
 
@@ -183,14 +230,18 @@ __shelf.camera()           // posição, alvo, distância, aspect
 __shelf.sort('pages','desc')  // troca a ordenação
 __shelf.card(0, x, y)      // abre o cartão numa âncora arbitrária
 __shelf.edit(0)            // abre o painel em modo edição
-__shelf.wipe()             // limpa o banco
-__shelf.splash({ nickname: 'Bruno', gender: 'm' })  // reprisa a abertura
+__shelf.wipe()             // limpa a minha estante
+__shelf.splash()           // reprisa a abertura (ou .splash({ nickname, gender }))
+__shelf.me()               // o usuário logado
+__shelf.invites()          // a allowlist; .invite(email), .revoke(email)
+__shelf.logout()
 ```
 
-Nada disso vai para o build de produção.
+Nada disso vai para o build de produção, e só existe depois do login.
 
 ## Próximos passos
 
 O projeto é para uso pessoal — eu e poucos amigos, cada um com a sua estante e
-vendo a dos outros. Login com Google, perfil e amigos, e o polimento da
-interface estão em `steps.md`, que é o documento de rumo do projeto.
+vendo a dos outros. O login com Google e a allowlist já estão de pé; perfil e
+amigos, e o polimento da interface, estão em `steps.md`, que é o documento de
+rumo do projeto.

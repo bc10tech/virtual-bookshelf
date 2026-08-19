@@ -1,5 +1,5 @@
 import { MongoClient } from 'mongodb';
-import { INDEXES, COLLECTION } from './schema.js';
+import { COLLECTIONS } from './schema.js';
 
 const URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017';
 const DB_NAME = process.env.MONGODB_DB || 'virtual_bookshelf';
@@ -57,8 +57,14 @@ export async function connect() {
   // o validador de schema, que `createIndex` nao alcanca porque `collMod` exige
   // `dbAdmin`. Deixar o boot criando indice la teria dois donos para a mesma
   // decisao, e um round trip a mais em todo cold start.
+  //
+  // As opcoes (`unique`, TTL) vem do registro junto com a chave, de proposito:
+  // e o mesmo objeto que o `setup` le, e e o que impede os dois de criarem o
+  // mesmo indice com opcoes diferentes (`IndexOptionsConflict`).
   if (isLocal) {
-    for (const { key } of INDEXES) await db.collection(COLLECTION).createIndex(key);
+    for (const [name, { indexes }] of Object.entries(COLLECTIONS)) {
+      for (const { key, options } of indexes) await db.collection(name).createIndex(key, options);
+    }
   }
 
   return db;
@@ -67,7 +73,11 @@ export async function connect() {
 /** Ha conexao viva? Usado pelo guarda das rotas de dado e pelo health check. */
 export const isConnected = () => Boolean(db);
 
-export const books = () => db.collection(COLLECTION);
+export const collection = (name) => db.collection(name);
+export const books = () => collection('books');
+export const users = () => collection('users');
+export const sessions = () => collection('sessions');
+export const invites = () => collection('invites');
 
 export async function close() {
   await client?.close();

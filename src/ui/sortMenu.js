@@ -37,7 +37,7 @@ export function createSortMenu({ toggle, pill, menu, getSort, onSelect }) {
 
       const item = document.createElement('button');
       item.type = 'button';
-      item.className = 'sortmenu__item';
+      item.className = 'menu__item';
       item.setAttribute('role', 'menuitemradio');
       item.setAttribute('aria-checked', String(active));
       item.tabIndex = -1;
@@ -50,7 +50,7 @@ export function createSortMenu({ toggle, pill, menu, getSort, onSelect }) {
       // sobre o que aconteceria, e nao um estado.
       if (active) {
         const dir = document.createElement('span');
-        dir.className = 'sortmenu__dir';
+        dir.className = 'menu__dir';
         dir.textContent = sort.dir === 'desc' ? option.desc : option.asc;
         item.append(dir);
         item.title = 'Clique de novo para inverter';

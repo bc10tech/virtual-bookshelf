@@ -3,6 +3,11 @@ import { fileURLToPath } from 'node:url';
 import { existsSync } from 'node:fs';
 import { connect, close, isConnected, isLocal } from './db.js';
 import { router as booksRouter } from './books.js';
+import { router as authRouter } from './auth.js';
+import { router as usersRouter } from './users.js';
+import { router as invitesRouter } from './invites.js';
+import { requireUser } from './session.js';
+import { BASE_URL, oauthConfigured } from './env.js';
 
 const PORT = Number(process.env.PORT) || 3000;
 const DIST = fileURLToPath(new URL('../dist', import.meta.url));
@@ -24,30 +29,53 @@ app.use(express.json({ limit: '16kb' }));
 // processo, que e exatamente a reacao errada quando quem esta fora e o banco.
 app.get('/api/health', (_req, res) => res.json({ ok: true, db: isConnected() }));
 
-// Guarda das rotas de dado. Quando o banco e remoto o boot nao aborta (ver
-// abaixo), entao alguma requisicao pode chegar antes de existir conexao — sem
-// isto, `books()` estouraria num 500 opaco. A tentativa de reconectar aqui e o
-// que faz o processo se recuperar sozinho de um solucco do Atlas, sem reinicio.
-app.use('/api/v1', async (_req, res, next) => {
+// Guarda das rotas que tocam o banco. Quando o banco e remoto o boot nao aborta
+// (ver abaixo), entao alguma requisicao pode chegar antes de existir conexao —
+// sem isto, `books()` estouraria num 500 opaco. A tentativa de reconectar aqui
+// e o que faz o processo se recuperar sozinho de um solucco do Atlas, sem
+// reinicio. `onFail` porque a resposta certa depende de quem pergunta: JSON
+// para a API, redirect para o callback do login (que e uma navegacao).
+const ensureDb = (onFail) => async (_req, res, next) => {
   if (isConnected()) return next();
   try {
     await connect();
     console.log('[api] mongodb reconectado');
     next();
   } catch {
-    res.status(503).json({ error: 'banco indisponivel' });
+    onFail(res);
   }
-});
+};
+
+// Rotas do login ANTES do fallback do SPA la embaixo: sem isso o callback do
+// Google receberia o `index.html`. (So acontece com `dist/` presente — em
+// `npm run dev` o Vite e quem serve o front, entao o bug seria invisivel ate o
+// primeiro `npm run build`.)
+app.use(
+  '/auth',
+  ensureDb((res) => res.redirect('/?auth=erro')),
+  authRouter,
+);
 
 // Tudo que devolve dado nasce versionado, antes de existir cliente publicado:
-// depois disso, mudar formato de resposta quebra quem ja instalou.
+// depois disso, mudar formato de resposta quebra quem ja instalou. E tudo em
+// `/api/v1` exige sessao: `requireUser` poe `req.user`, e e dele que
+// `books.js` tira o dono de cada filtro.
+app.use(
+  '/api/v1',
+  ensureDb((res) => res.status(503).json({ error: 'banco indisponivel' })),
+  requireUser,
+);
+app.use('/api/v1/users', usersRouter);
+app.use('/api/v1/invites', invitesRouter);
 app.use('/api/v1/books', booksRouter);
 
-// Em desenvolvimento quem serve o front e o Vite (que faz proxy de /api para
-// ca). Depois de `npm run build`, este mesmo processo serve o dist/ sozinho.
+// Em desenvolvimento quem serve o front e o Vite (que faz proxy de /api e /auth
+// para ca). Depois de `npm run build`, este mesmo processo serve o dist/ sozinho.
+// O fallback exclui `/auth/` tambem: um `/auth/qualquer` deve dar 404, nao a
+// pagina.
 if (existsSync(DIST)) {
   app.use(express.static(DIST, { maxAge: '1h' }));
-  app.get(/^(?!\/api\/).*/, (_req, res) => res.sendFile(`${DIST}/index.html`));
+  app.get(/^(?!\/(api|auth)\/).*/, (_req, res) => res.sendFile(`${DIST}/index.html`));
 }
 
 app.use((_req, res) => res.status(404).json({ error: 'rota nao encontrada' }));
@@ -81,7 +109,13 @@ try {
   console.error('[api] subindo mesmo assim — /api/health responde e as rotas de dado dao 503.');
 }
 
-const server = app.listen(PORT, () => console.log(`[api] http://localhost:${PORT}`));
+if (!oauthConfigured()) {
+  console.error('[auth] GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET ausentes: ninguem consegue entrar. Veja .env.example.');
+}
+
+const server = app.listen(PORT, () =>
+  console.log(`[api] http://localhost:${PORT}  (login volta em ${BASE_URL})`),
+);
 
 for (const sig of ['SIGINT', 'SIGTERM']) {
   process.on(sig, () => {

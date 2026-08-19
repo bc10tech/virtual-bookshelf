@@ -12,10 +12,16 @@ de uso; peso e responsividade continuam sendo bom senso, não juiz — veja
 docker compose up -d && npm install && npm run dev
 ```
 
-Interface em `:5173` (Vite, proxy de `/api` para o Express), API em `:3000`.
-`npm run build && npm start` serve tudo pela porta 3000. `npm run dev -- --host`
-para testar em celular na rede local. `npm test` roda `node --test` sobre
-`test/` (zero dependência nova).
+Interface em `:5173` (Vite, proxy de `/api` e `/auth` para o Express), API em
+`:3000`. `npm run build && npm start` serve tudo pela porta 3000. `npm run dev
+-- --host` para testar em celular na rede local — **mas o login não funciona
+por IP privado** (o Google só aceita `localhost` ou https como redirect URI).
+`npm test` roda `node --test` sobre `test/` (zero dependência nova).
+
+Login exige `GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`/`BASE_URL` no `.env`
+(ver `.env.example`); o redirect URI registrado no Google Cloud Console tem de
+ser exatamente `<BASE_URL>/auth/google/callback`. Sem essas variáveis o
+servidor sobe, mas ninguém entra.
 
 ## Arquitetura
 
@@ -32,19 +38,27 @@ src/scene/          Three.js: renderer.js (loop sob demanda), camera.js
                      cena com o estado)
 src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
                      paginador, menu de ordenação, tema, splash.js (abertura,
-                     3 fases em CSS) + splashTitle.js (texto puro, testado)
-src/data/            api.js (CRUD), search.js (Open Library), sort.js, user.js
-                     (usuário da sessão; hoje sempre `null`, rota do login
-                     ainda não existe)
+                     3 fases em CSS) + splashTitle.js (texto puro, testado),
+                     gate.js (tela de entrada do visitante; authFlagFromSearch
+                     é puro e testado), account.js (menu de conta, canto
+                     superior esquerdo), invites.js (diálogo da allowlist)
+src/data/            api.js (CRUD + ApiError com status), search.js (Open
+                     Library), sort.js, user.js (me/logout), invites.js
 src/assets/          fonte dos assets vetorizados (hoje só a logo original em
                      PNG; não entra no build)
 server/              Express + driver oficial do MongoDB (sem Mongoose):
                      validate.js valida a entrada (zod), schema.js valida o
-                     documento gravado ($jsonSchema), limits.js é o que os dois
-                     dividem, db.js/books.js o resto
-scripts/db.mjs       check/setup/migrate — aplica o schema no banco e migra o
-                     acervo para o Atlas
-test/                node --test — hoje só splashTitle.js
+                     documento gravado ($jsonSchema, registro COLLECTIONS),
+                     limits.js é o que os dois dividem, db.js/books.js o CRUD.
+                     Login: env.js (variáveis, num lugar só), oidc.js (URL de
+                     auth + verificação do id_token, puro), cookies.js (parse,
+                     puro), identity.js (e-mail/handle, puro), session.js
+                     (cookie vb.sid + coleção sessions, requireUser/requireAdmin),
+                     auth.js (rotas /auth), users.js (/users/me, resolveLogin),
+                     invites.js (/invites, só admin)
+scripts/db.mjs       check/setup/migrate/claim — aplica schema+índices em todas
+                     as coleções, migra o acervo, carimba livros sem dono
+test/                node --test — splashTitle, cookies, oidc, identity, gate
 ```
 
 Não existe `bookshelf.obj`/`.mtl` no repo. A estante é gerada por código a
@@ -108,14 +122,52 @@ prateleiras, o que o arquivo não fazia.
   Números compartilhados só via `limits.js`; nunca repetir um nos dois. E
   cuidado ao assumir tipo: `rating: 0` chega ao BSON como `int` e `2.5` como
   `double`, por isso é `bsonType: 'number'`.
-- **Campo novo no livro é deploy em dois passos.** Com
-  `additionalProperties: false`, alargar `schema.js` e rodar `db.mjs setup`
-  **antes** de subir o código que escreve o campo. Na ordem inversa, a escrita é
-  rejeitada em produção.
+- **Campo novo no livro — e no usuário — é deploy em dois passos.** Com
+  `additionalProperties: false` (`books` e `users`), alargar `schema.js` e rodar
+  `db.mjs setup` **antes** de subir o código que escreve o campo. Na ordem
+  inversa, a escrita é rejeitada em produção.
 - **O validador nunca é aplicado no boot da aplicação.** `collMod` exige
   `dbAdmin`, e a aplicação usa um usuário `readWrite`. Isso é de propósito: quem
   aplica é `scripts/db.mjs setup`, com a credencial de operação. Pelo mesmo
   motivo o `createIndex` do boot só roda quando o banco é local.
+- **`COLLECTIONS` (`schema.js`) é o registro de toda coleção, com schema E
+  índices (chave + opções).** `db.js` (boot local) e `db.mjs setup` leem o mesmo
+  objeto; se um criasse `{ expiresAt: 1 }` sem TTL e o outro com, o Mongo
+  recusaria com `IndexOptionsConflict`. Índice novo é sempre ali, nunca num
+  `createIndex` solto.
+- **Toda rota de `/api/v1` passa por `requireUser`; o dono é sempre
+  `req.user._id`** (`owner(req)` em `books.js`), e todo filtro de leitura e
+  escrita leva `userId`. É a única regra de autorização do app. No POST, o
+  `userId` é escrito **depois** do spread do valor validado — nada do cliente
+  sobrescreve o dono. `/api/health` e `/auth` ficam fora.
+- **Sessão só em cookie `httpOnly` (`vb.sid`), guardada em `sessions`.** Sem
+  JWT, sem `localStorage`: um XSS não rouba a sessão. `Secure` vem de `BASE_URL`
+  começar com `https:`, nunca de `NODE_ENV` — em `http://localhost` um cookie
+  `Secure` não seria gravado e o login "voltaria" direto para o gate.
+  `sessions.createdAt/expiresAt` são BSON `Date` (o TTL só enxerga `Date`); o
+  resto do banco usa string ISO.
+- **E-mail é sempre `normalizeEmail()` (`identity.js`) antes de comparar ou
+  gravar** — `invites._id`, `ADMIN_EMAIL`, o `email` do `id_token`, o `:email`
+  do DELETE. Um convite gravado com maiúscula nunca casaria com o que o Google
+  devolve, e o sintoma seria "convidei e a pessoa não entra".
+- **O `id_token` não tem a assinatura verificada, de propósito** (`oidc.js`): ele
+  chega pelo canal de trás (o próprio servidor faz o POST no endpoint de token
+  do Google por TLS), caso em que a spec OIDC dispensa. Se um dia o token vier
+  do **cliente** (One Tap, botão do Google no browser), aí é JWKS obrigatório.
+  `iss`, `aud`, `exp` e `email_verified === true` continuam conferidos.
+- **O cookie do `state` (`vb.oauth`) tem de ser `SameSite=Lax`.** A volta do
+  Google é navegação cross-site; com `Strict` o cookie não viria e todo login
+  falharia com "state não confere". E `clearCookie` só apaga com o **mesmo
+  `path`** do `set` — as opções moram num objeto só.
+- **Rotas de `/auth` registradas antes do fallback do SPA** (`index.js`), e o
+  regex do fallback exclui `/auth/`. Só se manifesta com `dist/` presente: em
+  `npm run dev` o Vite serve o front, então um erro de ordem seria invisível
+  até o primeiro `npm run build`.
+- **`me()` é chamado uma vez no boot e a promise é compartilhada** entre a
+  splash (que só espera até `SPLASH.PREP_MS`) e o próprio boot (que espera de
+  verdade). Visitante (401) → a cena 3D **nem inicializa**; a splash sai
+  revelando o `#gate`. `me()` devolve `null` só no 401 e relança o resto — é
+  assim que o boot separa "sem sessão" de "servidor fora".
 - **Fontes são auto-hospedadas e variáveis** (`public/fonts/`, hoje Bitter +
   Karla). Preferir sempre `wght@min..max` no Google Fonts a baixar
   instâncias estáticas — metade dos arquivos, mesma cobertura de peso.
@@ -157,4 +209,12 @@ prateleiras, o que o arquivo não fazia.
 Com `npm run dev`, o console do browser expõe `__shelf` (não entra no build de
 produção): `__shelf.stats()`, `.layout()`, `.camera()`, `.seed(n, páginas)`,
 `.sort(criterio, direção)`, `.card(i, x, y)`, `.edit(i)`, `.wipe()`,
-`.splash({ nickname, gender })` (reprisa a abertura com um usuário simulado).
+`.splash()` (reprisa a abertura; com `{ nickname, gender }` simula outro
+usuário), `.me()`, `.invites()`/`.invite(email)`/`.revoke(email)` (admin),
+`.logout()`. Só existe depois do login — para visitante o boot para no gate.
+
+Para testar um fluxo logado sem passar pelo Google (ex.: outro usuário), dá
+para inserir um documento em `users` e um em `sessions` direto no Mongo local e
+gravar `document.cookie = 'vb.sid=<token>; path=/'` no console — o servidor só
+lê o cabeçalho `Cookie`. Lembrar de apagar depois: um `users` de teste com o
+e-mail do admin faria o login real bater no índice único (`11000`).

@@ -6,6 +6,12 @@ import {
   DATE_RE,
   ID_RE,
   TIMESTAMP_RE,
+  EMAIL_RE,
+  HANDLE_RE,
+  SUB_RE,
+  SESSION_TOKEN_RE,
+  ROLES,
+  GENDERS,
 } from './limits.js';
 
 /**
@@ -66,16 +72,11 @@ export const BOOK_SCHEMA = {
     // fora, todo insert falha — e o erro nao diz que o problema e o `_id`.
     _id: { bsonType: 'string', pattern: ID_RE.source },
 
-    // Aceita os dois estados de proposito: hoje e sempre `null` (nao ha login),
-    // e no ponto 3 vira o id do dono. Assim o validador nao precisa ser
-    // reaplicado no meio da migracao de autenticacao.
-    //
-    // TODO(ponto 3): quando `owner()` em `books.js` deixar de devolver `null` e
-    // o backfill terminar, apertar para `bsonType: 'string'` e rodar
-    // `db.mjs setup` de novo. Enquanto a uniao existir, esta barreira NAO pega
-    // "esqueci de carimbar o userId" — que e exatamente o bug que a autorizacao
-    // do ponto 4 mais teme.
-    userId: { bsonType: ['string', 'null'] },
+    // O `sub` do Google do dono — o `_id` de `users`. Foi `['string','null']`
+    // durante a fase sem login; apertado no item 3, depois do `db.mjs claim`.
+    // E esta linha que pega "esqueci de carimbar o userId": um insert sem dono
+    // e recusado pelo banco, nao so pelo `owner(req)` de `books.js`.
+    userId: { bsonType: 'string', pattern: SUB_RE.source },
 
     title: { bsonType: 'string', minLength: 1, maxLength: MAX.title },
 
@@ -131,6 +132,89 @@ export const BOOK_SCHEMA = {
 };
 
 /**
+ * Conta de usuario: `_id` e o `sub` do Google (estavel para sempre, mesmo se a
+ * pessoa trocar de e-mail). `email` e `handle` sao unicos por indice.
+ *
+ * `nickname` e `gender` nascem `null` e sao editados no perfil (item 4 do
+ * `steps.md`); a splash usa os dois. `picture` e a URL que o Google serve —
+ * nao passa pelo nosso host.
+ *
+ * `createdAt`/`lastSeenAt` sao string ISO como em `books` (vao ao cliente como
+ * JSON). So `sessions` foge a regra, e la esta o porque.
+ *
+ * `additionalProperties: false` de novo — entao campo novo de perfil e deploy
+ * em dois passos, igual ao livro: alargar aqui e `db.mjs setup` ANTES do codigo.
+ */
+export const USER_SCHEMA = {
+  bsonType: 'object',
+  required: [
+    '_id',
+    'email',
+    'name',
+    'picture',
+    'handle',
+    'role',
+    'nickname',
+    'gender',
+    'createdAt',
+    'lastSeenAt',
+  ],
+  properties: {
+    _id: { bsonType: 'string', pattern: SUB_RE.source },
+    email: { bsonType: 'string', maxLength: MAX.email, pattern: EMAIL_RE.source },
+    // `''` quando o Google nao manda nome (o zod-equivalente esta em `oidc.js`).
+    name: { bsonType: 'string', maxLength: MAX.name },
+    picture: { bsonType: ['string', 'null'], maxLength: MAX.picture },
+    handle: { bsonType: 'string', maxLength: MAX.handle, pattern: HANDLE_RE.source },
+    role: { enum: ROLES },
+    nickname: { bsonType: ['string', 'null'], maxLength: MAX.nickname },
+    gender: { enum: [...GENDERS, null] },
+    createdAt: { bsonType: 'string', pattern: TIMESTAMP_RE.source },
+    lastSeenAt: { bsonType: 'string', pattern: TIMESTAMP_RE.source },
+  },
+  additionalProperties: false,
+};
+
+/**
+ * Sessao: o `_id` E o token do cookie (32 bytes em hex), entao a busca por
+ * request e um `findOne` na chave primaria.
+ *
+ * `createdAt`/`expiresAt` sao BSON `Date`, NAO string ISO como no resto do
+ * banco: o indice TTL (`expireAfterSeconds`) so enxerga `Date`. Com string o
+ * monitor de expiracao ignoraria a colecao em silencio e ela cresceria para
+ * sempre. `session.js` le `expiresAt > now` na consulta de todo jeito — o TTL
+ * varre a cada 60 s, e nesse intervalo o documento ainda existe.
+ */
+export const SESSION_SCHEMA = {
+  bsonType: 'object',
+  required: ['_id', 'userId', 'createdAt', 'expiresAt'],
+  properties: {
+    _id: { bsonType: 'string', pattern: SESSION_TOKEN_RE.source },
+    userId: { bsonType: 'string', pattern: SUB_RE.source },
+    createdAt: { bsonType: 'date' },
+    expiresAt: { bsonType: 'date' },
+  },
+  additionalProperties: false,
+};
+
+/**
+ * Convite: `_id` e o e-mail em minusculas (`normalizeEmail`), e por isso nao
+ * precisa de indice proprio — a unicidade e a busca no login sao pelo `_id`.
+ * `invitedBy` e o `sub` do admin que convidou. O documento fica como registro
+ * depois que a pessoa entra.
+ */
+export const INVITE_SCHEMA = {
+  bsonType: 'object',
+  required: ['_id', 'invitedBy', 'createdAt'],
+  properties: {
+    _id: { bsonType: 'string', maxLength: MAX.email, pattern: EMAIL_RE.source },
+    invitedBy: { bsonType: 'string', pattern: SUB_RE.source },
+    createdAt: { bsonType: 'string', pattern: TIMESTAMP_RE.source },
+  },
+  additionalProperties: false,
+};
+
+/**
  * `strict` valida todo insert e todo update. `moderate` isentaria para sempre
  * os documentos que ja estivessem invalidos no momento em que o validador
  * entrou — um conjunto invisivel, com regra propria, que ninguem consegue
@@ -142,14 +226,22 @@ export const BOOK_SCHEMA = {
  * um PATCH so da nota falharia. Por isso `db.mjs setup` roda o `check` antes e
  * se recusa a aplicar enquanto houver divergente.
  */
-export const VALIDATION = {
-  validator: { $jsonSchema: BOOK_SCHEMA },
+export const validationFor = (schema) => ({
+  validator: { $jsonSchema: schema },
   validationLevel: 'strict',
   validationAction: 'error',
-};
+});
 
 /**
- * Um indice, porque ha exatamente uma consulta.
+ * O registro: toda colecao do banco, com o schema e os indices dela. E lido
+ * por DOIS consumidores — `db.js` (cria indice no boot quando o banco e local)
+ * e `scripts/db.mjs` (`check`/`setup`, contra qualquer banco) — e e por isso
+ * que as OPCOES do indice moram aqui junto da chave: se o boot criasse
+ * `{ expiresAt: 1 }` sem TTL e o `setup` tentasse com TTL, o Mongo recusaria
+ * com `IndexOptionsConflict` (85), porque e o mesmo nome com opcoes diferentes.
+ * Os dois lendo o mesmo objeto nao tem como divergir.
+ *
+ * Sobre os indices de `books` — um so, porque ha exatamente uma consulta:
  *
  * `{ userId: 1, order: 1 }` serve as quatro queries de `books.js`: a listagem
  * paginada (`sort({order: 1})`), a busca do ultimo `order` no POST
@@ -179,7 +271,31 @@ export const VALIDATION = {
  * justificativa" tem o melhor retorno — ainda mais num M0 de 512 MB
  * compartilhados, onde cada indice a mais e amplificacao de escrita por insert
  * para zero leitura beneficiada.
+ *
+ * Pelo mesmo criterio `sessions` nao tem indice em `userId`: "apagar todas as
+ * sessoes de um usuario" ainda nao existe como operacao. Quando existir
+ * (exclusao de conta, item 8), e `{ key: { userId: 1 } }` aqui.
  */
-export const INDEXES = [{ key: { userId: 1, order: 1 } }];
-
-export const COLLECTION = 'books';
+export const COLLECTIONS = {
+  books: {
+    schema: BOOK_SCHEMA,
+    indexes: [{ key: { userId: 1, order: 1 } }],
+  },
+  users: {
+    schema: USER_SCHEMA,
+    indexes: [
+      { key: { email: 1 }, options: { unique: true } },
+      { key: { handle: 1 }, options: { unique: true } },
+    ],
+  },
+  sessions: {
+    schema: SESSION_SCHEMA,
+    // `expireAfterSeconds: 0` = expira NO instante de `expiresAt`, que o
+    // `session.js` ja calcula (e renova) por sessao.
+    indexes: [{ key: { expiresAt: 1 }, options: { expireAfterSeconds: 0 } }],
+  },
+  invites: {
+    schema: INVITE_SCHEMA,
+    indexes: [],
+  },
+};

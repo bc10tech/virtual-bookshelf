@@ -22,8 +22,12 @@ import { createDetails } from './ui/details.js';
 import { createSortMenu } from './ui/sortMenu.js';
 import { createTheme } from './ui/theme.js';
 import { createSplash } from './ui/splash.js';
+import { createGate, authFlagFromSearch } from './ui/gate.js';
+import { createAccountMenu } from './ui/account.js';
+import { createInvitesDialog } from './ui/invites.js';
 import * as api from './data/api.js';
-import { me } from './data/user.js';
+import * as invitesApi from './data/invites.js';
+import { me, logout } from './data/user.js';
 
 const $ = (id) => document.getElementById(id);
 const live = $('live');
@@ -51,14 +55,23 @@ function noWebGL() {
   document.querySelector('.stage').replaceChildren(p);
 }
 
+const SERVER_DOWN = 'Não consegui falar com o servidor. Confira se o Docker e o `npm run dev` estão de pé.';
+
 async function boot() {
   const canvas = $('scene');
 
   // Primeira coisa do boot: a splash ja esta na tela desde o HTML, e daqui em
-  // diante ela e a tela de carregamento. `me()` corre solto — o titulo espera
-  // por ele so ate o teto do config.
+  // diante ela e a tela de carregamento. `me()` e chamado UMA vez e a promise e
+  // compartilhada: a splash espera por ela so ate o teto do config (para o
+  // titulo), e o boot espera por ela de verdade (para saber se ha alguem).
   const splash = createSplash($('splash'));
-  splash.intro(me());
+  const session = me();
+  splash.intro(session);
+
+  // O servidor volta do login com `?auth=...` quando algo nao deu certo. Le e
+  // limpa da URL antes de qualquer coisa: um F5 nao deve repetir o aviso.
+  const flag = authFlagFromSearch(location.search);
+  if (flag) history.replaceState(null, '', location.pathname);
 
   if (!hasWebGL()) {
     noWebGL();
@@ -66,7 +79,37 @@ async function boot() {
     return;
   }
 
+  // O tema vem ANTES do renderer, porque a tela de entrada tambem precisa dele.
+  // O callback so toca a cena depois que ela existe.
+  let sceneUp = false;
+  const theme = createTheme($('theme'), (t) => sceneUp && setSceneBackground(t));
+
+  let user = null;
+  try {
+    user = await session;
+  } catch (err) {
+    toast(SERVER_DOWN);
+    console.error('[app]', err);
+  }
+
+  // Visitante (401) ou servidor fora: a cena 3D nem e inicializada — nao ha o
+  // que desenhar, e a GPU fica quieta. A splash sai revelando a tela de
+  // entrada. Login e logout sao navegacoes completas, entao este estado e
+  // terminal na vida da pagina.
+  if (!user) {
+    // `hidden`, nao so cobertos: senao continuariam focaveis por Tab. So o
+    // botao de tema fica — a tela de entrada tambem tem claro e escuro.
+    $('fab').hidden = true;
+    $('corner-left').parentElement.hidden = true;
+    $('account').parentElement.hidden = true;
+    createGate($('gate')).show(flag);
+    await splash.leave(Promise.resolve());
+    return;
+  }
+
   initRenderer(canvas);
+  sceneUp = true;
+  setSceneBackground(theme.theme);
   const stage = canvas.parentElement;
   resizeRenderer(stage.clientWidth || 1, stage.clientHeight || 1);
   initControls(canvas);
@@ -75,9 +118,6 @@ async function boot() {
   // Carregado antes de qualquer atlas: texto desenhado em canvas com a fonte
   // ainda nao carregada ficaria com o fallback assado na textura para sempre.
   ensureFonts();
-
-  // O tema so mexe no fundo da cena; materiais e luzes ficam iguais.
-  createTheme($('theme'), (theme) => setSceneBackground(theme));
 
   const details = createDetails($('details'));
   details.onClose = () => deselect();
@@ -103,14 +143,47 @@ async function boot() {
     },
   });
 
+  // Convites: so o admin tem o dialogo (e o item no menu). Para os outros o
+  // objeto nem existe, e o servidor responde 403 de todo jeito.
+  const invites =
+    user.role === 'admin'
+      ? createInvitesDialog($('invites'), {
+          ...invitesApi,
+          onOpen() {
+            deselect();
+            sortMenu.close();
+            panel?.close({ returnFocus: false });
+          },
+        })
+      : null;
+
+  const account = createAccountMenu({
+    toggle: $('account'),
+    menu: $('account-menu'),
+    user,
+    onInvite: () => invites?.open(),
+    async onLogout() {
+      try {
+        await logout();
+      } catch (err) {
+        console.error('[app]', err);
+      }
+      // Recarrega mesmo se o POST falhou: o cookie pode ja ter morrido do lado
+      // de la, e a pagina limpa e o unico estado seguro depois de "Sair".
+      location.replace('/');
+    },
+  });
+
   // O retorno do painel e guardado: e por ele que o botao "Editar" do cartao
   // reabre o formulario num registro que ja existe.
   const panel = createPanel({
     // Abrir o formulario limpa a selecao: o cartao de detalhes some junto com o
-    // livro levantado, e o menu de ordenacao se recolhe.
+    // livro levantado, e os outros popovers se recolhem.
     onOpen() {
       deselect();
       sortMenu.close();
+      account.close();
+      invites?.close({ returnFocus: false });
     },
 
     // Escolheu um resultado: as capas (-M da estante, -L da apresentacao)
@@ -170,9 +243,13 @@ async function boot() {
     try {
       records = await api.list();
     } catch (err) {
-      toast(
-        'Não consegui falar com o servidor. Confira se o Docker e o `npm run dev` estão de pé.',
-      );
+      // Sessao morreu entre o `me()` e o `list()` (raro; ex.: "Sair" noutra
+      // aba): recomecar do zero cai na tela de entrada.
+      if (err instanceof api.ApiError && err.status === 401) {
+        location.replace('/');
+        return [];
+      }
+      toast(SERVER_DOWN);
       console.error('[app]', err);
     }
 
@@ -192,7 +269,7 @@ async function boot() {
     announce(`${initial.length} ${initial.length === 1 ? 'livro' : 'livros'} na estante.`);
   }
 
-  if (import.meta.env.DEV) installDebugHooks({ details, panel });
+  if (import.meta.env.DEV) installDebugHooks({ details, panel, invites });
 }
 
 /**
@@ -202,10 +279,13 @@ async function boot() {
  *
  *   __shelf.seed(12, 600)   -> 12 livros de 600 paginas
  *   __shelf.stats()         -> draw calls, texturas, estantes
- *   __shelf.wipe()          -> limpa o banco
+ *   __shelf.wipe()          -> limpa a MINHA estante
  *   __shelf.splash({ nickname: 'Bruno', gender: 'm' })  -> reprisa a abertura
+ *   __shelf.me()            -> o usuario logado, como o servidor o ve
+ *   __shelf.invites() / .invite(email) / .revoke(email)  -> a allowlist (admin)
+ *   __shelf.logout()
  */
-async function installDebugHooks({ details, panel }) {
+async function installDebugHooks({ details, panel, invites }) {
   const { renderer, booksGroup, camera, scene: sceneRef } = await import(
     './scene/renderer.js'
   );
@@ -277,11 +357,12 @@ async function installDebugHooks({ details, panel }) {
     }),
     sort: (by, dir = 'asc') => setSort({ by, dir }),
     /**
-     * Reprisa a abertura com um usuario inventado — a unica forma de ver a
-     * personalizacao antes de o login existir. O markup original ja foi
-     * removido do DOM na saida, entao aqui ele e remontado igual.
+     * Reprisa a abertura. Sem argumento usa o usuario logado de verdade; com
+     * `{ nickname, gender }` simula outro (o apelido so existe no perfil, item
+     * 4, entao e assim que se ve a personalizacao hoje). O markup original ja
+     * foi removido do DOM na saida, entao aqui ele e remontado igual.
      */
-    async splash(user = null) {
+    async splash(user) {
       document.getElementById('splash')?.remove();
 
       const el = document.createElement('div');
@@ -306,8 +387,17 @@ async function installDebugHooks({ details, panel }) {
       document.body.append(el);
 
       const preview = createSplash(el);
-      preview.intro(Promise.resolve(user));
+      preview.intro(user === undefined ? me() : Promise.resolve(user));
       await preview.leave(Promise.resolve());
+    },
+    me,
+    invites: invitesApi.list,
+    invite: invitesApi.invite,
+    revoke: invitesApi.revoke,
+    invitesDialog: invites,
+    async logout() {
+      await logout();
+      location.replace('/');
     },
     /** Abre o cartao numa ancora arbitraria — testa o grampo contra a viewport. */
     card: (index, x, y) => details.show(allRecords()[index], { x, y }),
@@ -337,7 +427,8 @@ async function installDebugHooks({ details, panel }) {
 boot().catch((err) => {
   console.error('[app] falha no boot', err);
   // Ultimo recurso: se o boot morreu antes do `splash.leave`, o overlay ficaria
-  // na frente do erro para sempre.
+  // na frente do erro para sempre. O gate idem.
   document.getElementById('splash')?.remove();
+  document.getElementById('gate')?.remove();
   toast('Algo quebrou ao iniciar a estante. Veja o console para o detalhe.');
 });
