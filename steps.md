@@ -446,8 +446,17 @@ A ordem aqui é a do que dá mais prazer por hora investida.
   outro elemento; **Enter com a lista aberta nunca submete**; opção manual
   com alvo ≥44 px; `enterkeyhint` em busca e páginas. Swipe-down para fechar
   ficou de fora de propósito (conflita com o scroll interno do sheet).
-- **Página de estatísticas**: lidos por mês/ano, páginas, nota média, tempo
-  médio de leitura. HTML simples, sem biblioteca de gráfico (barras em CSS).
+- ✅ **Página de estatísticas**: virou um diálogo na casca comum do canto da
+  conta (`src/ui/stats.js` + item **Estatísticas** no menu), não uma rota — o
+  app não tem router e o acervo já está no cliente. Os agregados saem de
+  `src/data/shelfStats.js` (puro, testado, no molde do `server/stats.js` da
+  lista de Amigos): lidos, lendo agora, páginas lidas (só dos terminados),
+  nota média (só `rating > 0`, a 1 casa — o que `formatRating` mostra), tempo
+  médio (a mesma duração inclusiva do cartão) e lidos por mês agrupados pelo
+  ano do `endDate`. Barras em CSS puro (div com altura em % num trilho fixo),
+  navegação ‹ ano ›, **zero rota nova** — e como os callbacks são lidos na
+  abertura, em modo leitura os números são da estante do amigo, com subtítulo
+  dizendo de quem.
 - **Focus trap** no painel; auditoria de contraste com ferramenta.
 - **Lista `/lista` sem WebGL** como plano B para aparelho sem GPU — hoje ele
   só vê uma mensagem.

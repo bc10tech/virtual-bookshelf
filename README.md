@@ -13,7 +13,9 @@ Clicar num livro abre um cartão ao lado dele com a review e os detalhes, com um
 botão para editar ou excluir o registro. Um livro que se está lendo (tem começo e
 não tem fim) fica um pouco puxado para a frente na prateleira. Os botões dos
 cantos inferiores ordenam a estante e alternam entre modo claro e escuro; o do
-canto superior esquerdo é a conta (Perfil, Amigos, Convidar, Sair).
+canto superior esquerdo é a conta (Perfil, Amigos, Estatísticas, Convidar,
+Sair). **Estatísticas** resume a estante à vista — lidos, lendo agora, páginas,
+nota média, tempo médio e as barras de lidos por mês, ano a ano.
 
 Entra-se com a conta do Google, e só quem foi convidado entra: o admin libera um
 e-mail pelo próprio app (menu da conta → Convidar), de qualquer aparelho, sem
@@ -102,10 +104,11 @@ src/
   config.js         TODOS os números do projeto moram aqui
   assets/           fonte dos assets vetorizados (hoje só a logo; não vai pro build)
   scene/            three.js: renderer, câmera, estante, madeira, livros, capas, tweens
-  data/             acesso à API, busca na Open Library, ordenação, usuário, convites
+  data/             acesso à API, busca na Open Library, ordenação, usuário, convites,
+                    agregados das estatísticas (shelfStats.js, puro)
   ui/               painel, estrelas, paginador, cartão, menu de ordem, tema, splash,
                     tela de entrada (gate), menu de conta, diálogos de convites,
-                    perfil e amigos (casca comum em leftDialog.js)
+                    perfil, amigos e estatísticas (casca comum em leftDialog.js)
   bootParams.js     o que a URL diz ao boot (?auth, ?welcome, ?u) — puro, testado
 public/             fonts/ (Bitter e Karla, SIL OFL) e favicon.svg (mesmo traço da logo)
 test/               node --test

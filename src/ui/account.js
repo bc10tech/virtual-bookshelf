@@ -1,7 +1,8 @@
 /**
  * Canto superior esquerdo: o botao de conta abre um menu com quem esta logado,
  * "Perfil", "Minha estante" (so enquanto se ve a de outra pessoa), "Amigos",
- * "Convidar" (so admin) e "Sair". Mesmo padrao do `sortMenu.js` — `hidden` +
+ * "Estatisticas", "Convidar" (so admin) e "Sair". Mesmo padrao do
+ * `sortMenu.js` — `hidden` +
  * `aria-expanded`, foco movido a mao entre `role="menuitem"`, Escape devolve o
  * foco ao botao, toque fora fecha —, so que num estagio, e crescendo para
  * baixo.
@@ -20,6 +21,7 @@ export function createAccountMenu({
   onProfile,
   onHome,
   onFriends,
+  onStats,
   onInvite,
   onLogout,
 }) {
@@ -81,6 +83,7 @@ export function createAccountMenu({
     menu.append(item('Perfil', 'i-user', onProfile));
     if (isViewing()) menu.append(item('Minha estante', 'i-home', onHome));
     menu.append(item('Amigos', 'i-users', onFriends));
+    menu.append(item('Estatísticas', 'i-chart', onStats));
     if (user.role === 'admin') menu.append(item('Convidar', 'i-plus', onInvite));
     menu.append(item('Sair', 'i-logout', onLogout));
   }

@@ -16,6 +16,7 @@ import {
   bindPicking,
   deselect,
   setRecords,
+  allRecords,
 } from './scene/stage.js';
 import { createPanel } from './ui/panel.js';
 import { createPager } from './ui/pager.js';
@@ -28,6 +29,7 @@ import { createAccountMenu } from './ui/account.js';
 import { createInvitesDialog } from './ui/invites.js';
 import { createProfileDialog } from './ui/profile.js';
 import { createFriendsDialog } from './ui/friends.js';
+import { createStatsDialog } from './ui/stats.js';
 import { bootParams } from './bootParams.js';
 import * as api from './data/api.js';
 import * as invitesApi from './data/invites.js';
@@ -152,13 +154,13 @@ async function boot() {
     },
   });
 
-  // Os tres dialogos do canto da conta ocupam o mesmo lugar: abrir um fecha os
+  // Os dialogos do canto da conta ocupam o mesmo lugar: abrir um fecha os
   // outros (e o painel, o popover de ordenacao e a selecao).
   const closeOthers = (except) => {
     deselect();
     sortMenu.close();
     panel?.close({ returnFocus: false });
-    for (const d of [invites, profile, friends]) {
+    for (const d of [invites, profile, friends, stats]) {
       if (d && d !== except) d.close({ returnFocus: false });
     }
   };
@@ -185,6 +187,14 @@ async function boot() {
     list: usersApi.listUsers,
     onOpen: () => closeOthers(friends),
     onView: (person) => viewShelf(person).catch((err) => console.error('[app]', err)),
+  });
+
+  // Estatisticas da estante A VISTA: os callbacks sao lidos na abertura, entao
+  // em modo leitura os numeros (e o subtitulo) sao da estante do amigo.
+  const stats = createStatsDialog($('stats'), {
+    records: allRecords,
+    owner: () => viewing,
+    onOpen: () => closeOthers(stats),
   });
 
   // ---- modo leitura: a estante de outra pessoa -----------------------------
@@ -278,6 +288,7 @@ async function boot() {
     onProfile: () => profile.open(),
     onHome: () => goHome().catch((err) => console.error('[app]', err)),
     onFriends: () => friends.open(),
+    onStats: () => stats.open(),
     onInvite: () => invites?.open(),
     async onLogout() {
       try {
@@ -300,7 +311,7 @@ async function boot() {
       deselect();
       sortMenu.close();
       account.close();
-      for (const d of [invites, profile, friends]) d?.close({ returnFocus: false });
+      for (const d of [invites, profile, friends, stats]) d?.close({ returnFocus: false });
     },
 
     // Escolheu um resultado: as capas (-M da estante, -L da apresentacao)
@@ -413,7 +424,7 @@ async function boot() {
   if (welcome) profile.open({ suggest: welcome.name });
 
   if (import.meta.env.DEV) {
-    installDebugHooks({ details, panel, invites, profile, friends, viewShelf, goHome });
+    installDebugHooks({ details, panel, invites, profile, friends, stats, viewShelf, goHome });
   }
 }
 
@@ -431,7 +442,16 @@ async function boot() {
  *   __shelf.invites() / .invite(email) / .revoke(email)  -> a allowlist (admin)
  *   __shelf.logout()
  */
-async function installDebugHooks({ details, panel, invites, profile, friends, viewShelf, goHome }) {
+async function installDebugHooks({
+  details,
+  panel,
+  invites,
+  profile,
+  friends,
+  stats,
+  viewShelf,
+  goHome,
+}) {
   const { renderer, booksGroup, camera, scene: sceneRef } = await import(
     './scene/renderer.js'
   );
@@ -547,6 +567,7 @@ async function installDebugHooks({ details, panel, invites, profile, friends, vi
     friends: usersApi.listUsers,
     profileDialog: profile,
     friendsDialog: friends,
+    statsDialog: stats,
     invites: invitesApi.list,
     invite: invitesApi.invite,
     revoke: invitesApi.revoke,

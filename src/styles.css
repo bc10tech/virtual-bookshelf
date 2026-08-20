@@ -1563,6 +1563,154 @@ textarea:user-invalid {
   color: var(--ink-faint);
 }
 
+/* ------------------------------------------------------------ estatisticas ---
+   Os totais em azulejos e as barras de lidos por mes. As barras sao divs com
+   altura em % dentro de um trilho fixo — CSS puro, sem biblioteca de grafico. */
+
+.stats__owner {
+  margin: -6px 0 12px;
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+}
+
+.stats__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.stats__tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm);
+  background: var(--surface-2);
+}
+
+.stats__value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.stats__label {
+  font-size: 0.76rem;
+  color: var(--ink-faint);
+}
+
+.stats__rating {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.stats__rating-text,
+.stats__rating--empty {
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+}
+
+.stats__year {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.stats__year-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.stats__year-head h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.stats__nav {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stats__nav:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--ink);
+}
+
+.stats__nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.stats__chart {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+}
+
+.stats__col {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+
+.stats__count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-soft);
+  min-height: 1em;
+  line-height: 1;
+}
+
+/* O trilho da a escala; a barra cresce de baixo por altura em %. */
+.stats__track {
+  width: 100%;
+  height: 88px;
+  display: flex;
+  align-items: flex-end;
+  border-radius: 4px 4px 0 0;
+  background: var(--surface-2);
+}
+
+.stats__bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  background: var(--accent);
+}
+
+.stats__mon {
+  font-size: 0.62rem;
+  color: var(--ink-faint);
+}
+
+.stats__year-meta {
+  margin: 10px 0 0;
+  font-size: 0.84rem;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.stats__empty {
+  margin: 0;
+  padding: 6px 4px;
+  font-size: 0.84rem;
+  color: var(--ink-faint);
+}
+
 /* ------------------------------------------------------------------- selo ---
    "Estante de Fulano", no topo, enquanto se ve a estante de outra pessoa. E um
    botao: tocar volta para a minha. Quando aparece, o paginador desce. */

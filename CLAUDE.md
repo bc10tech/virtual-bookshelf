@@ -47,11 +47,15 @@ src/ui/              painel de cadastro/edição, estrelas, cartão de detalhes,
                      desse canto: is-open + inert, sheet no celular),
                      invites.js (allowlist), profile.js (apelido/gênero/handle,
                      prévia ao vivo do título), friends.js (lista de quem está
-                     logado; tocar abre a estante em modo leitura)
+                     logado; tocar abre a estante em modo leitura), stats.js
+                     (estatísticas da estante à vista, barras em CSS),
+                     detailsText.js (frases do cartão, puro e testado),
+                     viewport.js (inset do teclado virtual, puro e testado)
 src/data/            api.js (CRUD + ApiError com status; list(base) serve a
                      minha estante e a alheia), search.js (Open Library),
                      sort.js, user.js (me/logout), invites.js, users.js
-                     (listUsers/booksOf/updateMe)
+                     (listUsers/booksOf/updateMe), shelfStats.js (agregados
+                     do diálogo de estatísticas, puro e testado)
 src/assets/          fonte dos assets vetorizados (hoje só a logo original em
                      PNG; não entra no build)
 server/              Express + driver oficial do MongoDB (sem Mongoose):
@@ -69,7 +73,8 @@ server/              Express + driver oficial do MongoDB (sem Mongoose):
 scripts/db.mjs       check/setup/migrate/claim — aplica schema+índices em todas
                      as coleções, migra o acervo, carimba livros sem dono
 test/                node --test — splashTitle, cookies, oidc, identity, gate,
-                     bootParams, layout, stats, validate (perfil)
+                     bootParams, layout, stats, validate (perfil), detailsText,
+                     viewport, shelfStats
 ```
 
 Não existe `bookshelf.obj`/`.mtl` no repo. A estante é gerada por código a
@@ -250,7 +255,7 @@ produção): `__shelf.stats()`, `.layout()`, `.camera()`, `.seed(n, páginas)`,
 `.sort(criterio, direção)`, `.card(i, x, y)`, `.edit(i)`, `.wipe()`,
 `.splash()` (reprisa a abertura; com `{ nickname, gender }` simula outro
 usuário), `.me()`, `.view(handle)`/`.home()` (modo leitura), `.friends()`,
-`.profileDialog`/`.friendsDialog`, `.invites()`/`.invite(email)`/`.revoke(email)`
+`.profileDialog`/`.friendsDialog`/`.statsDialog`, `.invites()`/`.invite(email)`/`.revoke(email)`
 (admin), `.logout()`. Só existe depois do login — para visitante o boot para
 no gate. `.edit`/`.seed` não sabem do modo leitura: voltar com `.home()` antes.
 
