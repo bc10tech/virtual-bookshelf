@@ -417,11 +417,35 @@ A ordem aqui é a do que dá mais prazer por hora investida.
 - ✅ **Tela de entrada do login** (`#gate`, item 3): a tela pós-splash para quem
   não está autenticado — logo, nome do app, uma linha e "Entrar com Google",
   com o aviso de "não convidada" quando é o caso. **Perfil** (item 4) fica.
-- **Cartão de detalhes** mais rico: capa grande, datas em texto ("lido em 12
-  dias, em março"), estrelas, review com tipografia de página.
-- **Painel de cadastro no celular**: hoje funciona; o que falta é fluidez —
-  teclado empurrando o formulário, o autocomplete com alvo maior, o botão de
-  confirmar sempre visível.
+- ✅ **Cartão de detalhes** mais rico: capa no topo, centralizada, em caixa
+  fixa de 132×198 (**fixa de propósito**: a troca de capa não mexe no layout e
+  o cartão não precisa ser reposicionado no load); a `-M` do cache pinta na
+  hora e um probe `Image` **sem** `crossOrigin` troca pela `-L` no onload
+  (`loadImageQuiet` seria CORS e baixaria a `-L` de novo; o disjuntor não é
+  tocado — imagem de DOM nunca passa por `loadImage`). Datas em texto por
+  `src/ui/detailsText.js` (puro, testado): "lido em 12 dias, em março", "de
+  março a abril de 2025", "lendo desde 3 de agosto" — ano omitido quando é o
+  corrente, parse por split manual (nunca `new Date('yyyy-mm-dd')`, que é UTC
+  e escorregaria de dia), contagem inclusiva clampada em ≥1. Estrelas maiores
+  só no CSS (`--glyph` de `.star--sm`); review com entrelinha 1.65 e
+  `hyphens: auto`, sem capitular e sem justify (rios em ~300 px).
+  `MARGIN`/`OFFSET` migraram do `details.js` para `DETAILS` no `config.js`.
+- ✅ **Painel de cadastro no celular**: o rodapé (`.form__footer`, mensagem de
+  erro + botões) virou **sticky** dentro do scroll do painel — Confirmar e o
+  erro do `fail()` sempre à vista, no desktop baixo também. Teclado em duas
+  camadas que não se somam: `interactive-widget=resizes-content` na meta
+  viewport (Android encolhe o dvh sozinho; iOS ignora) e `--kb` escrita por
+  `visualViewport` (`resize` **e** `scroll` — no iOS o viewport desliza sem
+  mudar de altura) só enquanto o painel está aberto; a conta é
+  `keyboardInset()` (`src/ui/viewport.js`, puro, testado). No celular o foco
+  na busca espera o `transitionend` do transform (teclado sobe com o sheet já
+  parado), com teto `PANEL.FOCUS_FALLBACK_MS` para reduced-motion.
+  Autocomplete: o fechamento perdeu o timer de 120 ms (era corrida com o
+  toque) — `pointerdown` fora do combo fecha, `pointerdown` na opção é
+  prevenido (não rouba foco, cobre mouse e toque), blur só fecha indo para
+  outro elemento; **Enter com a lista aberta nunca submete**; opção manual
+  com alvo ≥44 px; `enterkeyhint` em busca e páginas. Swipe-down para fechar
+  ficou de fora de propósito (conflita com o scroll interno do sheet).
 - **Página de estatísticas**: lidos por mês/ano, páginas, nota média, tempo
   médio de leitura. HTML simples, sem biblioteca de gráfico (barras em CSS).
 - **Focus trap** no painel; auditoria de contraste com ferramenta.

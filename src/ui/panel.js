@@ -1,6 +1,7 @@
-import { UI, BOOK, uid } from '../config.js';
+import { UI, BOOK, PANEL, uid } from '../config.js';
 import { searchDebounced, cancelSearch } from '../data/search.js';
 import { createStars } from './stars.js';
+import { keyboardInset } from './viewport.js';
 
 /**
  * O painel expansivel do canto superior direito, em dois modos: adicionar e
@@ -52,6 +53,24 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
   // Ler um livro no futuro nao faz sentido.
   start.max = new Date().toISOString().slice(0, 10);
 
+  const mobileMq = window.matchMedia(`(max-width: ${UI.MOBILE_MAX_W}px)`);
+
+  // ------------------------------------------------------- teclado virtual ---
+
+  // `100dvh` nao encolhe quando o teclado virtual abre; quem o enxerga e o
+  // visualViewport. Enquanto o painel esta aberto, `--kb` (lida pelo CSS do
+  // sheet) acompanha a altura do teclado. O listener de `scroll` e pelo iOS:
+  // la o viewport DESLIZA ao focar um campo, sem mudar de altura. No Android
+  // o `interactive-widget=resizes-content` da meta viewport ja encolhe o
+  // innerHeight junto, e a conta da ~0 — as duas camadas nao se somam.
+  const vv = window.visualViewport;
+  const syncKb = () => {
+    panel.style.setProperty(
+      '--kb',
+      `${keyboardInset(window.innerHeight, vv.height, vv.offsetTop)}px`,
+    );
+  };
+
   // ------------------------------------------------------------ abrir/fechar ---
 
   function open() {
@@ -65,7 +84,30 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
     panel.classList.add('is-open');
     fab.classList.add('is-hidden');
     fab.setAttribute('aria-expanded', 'true');
-    q.focus();
+
+    if (vv) {
+      vv.addEventListener('resize', syncKb);
+      vv.addEventListener('scroll', syncKb);
+    }
+
+    if (!mobileMq.matches) {
+      q.focus({ preventScroll: true });
+      return;
+    }
+    // No celular o foco dispara o teclado, e o teclado nao pode subir com o
+    // sheet ainda em transito (o browser tentaria rolar o campo a vista no
+    // meio do transform). Espera o `transitionend` do transform; o timeout e
+    // o plano B para quando a transicao nao dispara (reduced-motion).
+    let focado = false;
+    const focar = (e) => {
+      if (e && (e.target !== panel || e.propertyName !== 'transform')) return;
+      panel.removeEventListener('transitionend', focar);
+      if (focado || !isOpen) return;
+      focado = true;
+      q.focus({ preventScroll: true });
+    };
+    panel.addEventListener('transitionend', focar);
+    setTimeout(focar, PANEL.FOCUS_FALLBACK_MS);
   }
 
   function close({ returnFocus = true } = {}) {
@@ -74,6 +116,11 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
     panel.classList.remove('is-open');
     fab.classList.remove('is-hidden');
     fab.setAttribute('aria-expanded', 'false');
+    if (vv) {
+      vv.removeEventListener('resize', syncKb);
+      vv.removeEventListener('scroll', syncKb);
+      panel.style.removeProperty('--kb');
+    }
     closeList();
     cancelSearch();
     setMode(null);
@@ -188,7 +235,9 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
         li.append(text);
       }
 
-      li.addEventListener('mousedown', (e) => e.preventDefault()); // nao rouba o foco do input
+      // `pointerdown`, nao `mousedown`: cobre mouse E toque — sem isso o toque
+      // roubaria o foco do input (e o blur fecharia a lista antes do click).
+      li.addEventListener('pointerdown', (e) => e.preventDefault());
       li.addEventListener('click', () => choose(i));
       ac.append(li);
     });
@@ -229,7 +278,10 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
     q.value = selection.title;
     closeList();
     showChosen();
-    (selection.pagesLocked ? start : pages).focus();
+    const alvo = selection.pagesLocked ? start : pages;
+    alvo.focus();
+    // Com o teclado aberto o campo focado pode estar sob ele.
+    alvo.scrollIntoView({ block: 'nearest' });
     // A pessoa ainda vai preencher datas, nota e review: e tempo de sobra para
     // as capas baixarem antes do cadastro (ver `warmCover` em cover.js).
     onChoose?.(selection);
@@ -291,13 +343,28 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
       highlight((highlighted - 1 + options.length) % options.length);
-    } else if (e.key === 'Enter' && highlighted >= 0) {
+    } else if (e.key === 'Enter') {
+      // Com a lista aberta, Enter NUNCA submete — no teclado do celular (sem
+      // setas, nada realcado) ele dispararia a submissao implicita do form
+      // com os resultados ainda na tela.
       e.preventDefault();
-      choose(highlighted);
+      if (highlighted >= 0) choose(highlighted);
     }
   });
 
-  q.addEventListener('blur', () => setTimeout(closeList, 120));
+  // O fechamento da lista e deterministico, sem timer: um pointerdown fora do
+  // combo fecha (e dispara ANTES de blur/click, entao nao ha corrida com o
+  // toque numa opcao — que, pelo preventDefault acima, nem chega a tirar o
+  // foco do input). O blur so fecha quando o foco FOI para outro elemento
+  // (Tab); com relatedTarget nulo (teclado do celular recolhido) a lista fica
+  // aberta de proposito — a pessoa pode ter recolhido justamente para ve-la.
+  const combo = q.closest('.combo');
+  document.addEventListener('pointerdown', (e) => {
+    if (!ac.hidden && !combo.contains(e.target)) closeList();
+  });
+  q.addEventListener('blur', (e) => {
+    if (e.relatedTarget && !combo.contains(e.relatedTarget)) closeList();
+  });
 
   // Fim nunca antes do inicio — o proprio browser passa a impedir.
   start.addEventListener('change', () => {
@@ -362,9 +429,12 @@ export function createPanel({ onSubmit, onUpdate, onDelete, onOpen, onChoose }) 
   }
 
   function fail(msg, el) {
+    // A mensagem mora no rodape sticky (sempre a vista); o campo culpado e que
+    // pode estar rolado para fora — ou sob o teclado.
     formMsg.textContent = msg;
     formMsg.hidden = false;
     el?.focus();
+    el?.scrollIntoView({ block: 'nearest' });
   }
 
   /** Abre o painel ja preenchido com um registro existente. */

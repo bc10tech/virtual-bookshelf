@@ -358,6 +358,25 @@ export const UI = {
   REVIEW_MAX: 2000,
 };
 
+/** Cartao de detalhes. */
+export const DETAILS = {
+  /** Folga minima entre o cartao e a borda da tela. */
+  MARGIN: 12,
+  /** Deslocamento a partir do clique, para nao cobrir o proprio livro. */
+  OFFSET: 14,
+};
+
+/** Painel de cadastro/edicao. */
+export const PANEL = {
+  /**
+   * No celular o foco na busca so acontece depois do `transitionend` da
+   * abertura (0.28s no CSS, `.panel`), para o teclado subir com o sheet ja
+   * parado. Este e o teto de espera para o caso de a transicao nao disparar
+   * (ex.: prefers-reduced-motion zera duracoes).
+   */
+  FOCUS_FALLBACK_MS: 350,
+};
+
 export const OL = {
   SEARCH: 'https://openlibrary.org/search.json',
   COVER: 'https://covers.openlibrary.org/b/id/',

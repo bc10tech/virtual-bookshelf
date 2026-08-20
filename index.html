@@ -2,7 +2,13 @@
 <html lang="pt-BR" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <!-- `interactive-widget`: no Android o dvh passa a encolher com o teclado
+         virtual e o painel-sheet cabe sozinho; o iOS ignora o keyword (la quem
+         resolve e o visualViewport, em panel.js). -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content"
+    />
     <!-- O tema padrao e o escuro (UI.DEFAULT_THEME em config.js). O data-theme
          acima e os dois <meta> abaixo existem so para a primeirissima pintura
          nao piscar; o theme.js reescreve tudo ao resolver o tema. -->
@@ -99,6 +105,7 @@
               type="search"
               role="combobox"
               autocomplete="off"
+              enterkeyhint="search"
               aria-autocomplete="list"
               aria-expanded="false"
               aria-controls="ac"
@@ -120,6 +127,7 @@
             id="pages"
             type="number"
             inputmode="numeric"
+            enterkeyhint="done"
             min="1"
             max="5000"
             placeholder="300"
@@ -154,13 +162,17 @@
           ></textarea>
         </div>
 
-        <p id="form-msg" class="msg msg--error" role="alert" hidden></p>
+        <!-- Rodape sticky: Confirmar (e a mensagem de erro) sempre a vista,
+             mesmo com o form rolado ou o teclado aberto. -->
+        <div class="form__footer">
+          <p id="form-msg" class="msg msg--error" role="alert" hidden></p>
 
-        <div class="actions">
-          <!-- Longe do Confirmar de proposito, e so aparece no modo edicao. -->
-          <button type="button" class="btn btn--danger" id="delete" hidden>Excluir</button>
-          <button type="button" class="btn btn--ghost" id="cancel">Cancelar</button>
-          <button type="submit" class="btn btn--primary" id="confirm">Confirmar</button>
+          <div class="actions">
+            <!-- Longe do Confirmar de proposito, e so aparece no modo edicao. -->
+            <button type="button" class="btn btn--danger" id="delete" hidden>Excluir</button>
+            <button type="button" class="btn btn--ghost" id="cancel">Cancelar</button>
+            <button type="submit" class="btn btn--primary" id="confirm">Confirmar</button>
+          </div>
         </div>
       </form>
     </div>

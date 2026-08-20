@@ -253,7 +253,7 @@ function loadImageQuiet(url, timeoutMs) {
 
 /** `-M.jpg` -> `-L.jpg` preservando o `?default=false`; null se a URL nao e da Open Library. */
 const SHELF_SIZE_RE = new RegExp(`-${OL.COVER_SIZE_SHELF}\\.jpg(\\?|$)`);
-function hiResUrl(url) {
+export function hiResUrl(url) {
   if (!url) return null;
   const hi = url.replace(SHELF_SIZE_RE, `-${OL.COVER_SIZE_PRESENT}.jpg$1`);
   return hi === url ? null : hi;

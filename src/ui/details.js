@@ -1,4 +1,7 @@
+import { DETAILS } from '../config.js';
+import { hiResUrl } from '../scene/cover.js';
 import { renderStars } from './stars.js';
+import { periodText, pagesText } from './detailsText.js';
 
 /**
  * Cartao do livro clicado, ancorado ao ponto do clique.
@@ -11,12 +14,20 @@ import { renderStars } from './stars.js';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
-/** Folga minima entre o cartao e a borda da tela. */
-const MARGIN = 12;
-/** Deslocamento a partir do clique, para nao cobrir o proprio livro. */
-const OFFSET = 14;
+const { MARGIN, OFFSET } = DETAILS;
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, Math.max(lo, hi)));
+
+/**
+ * O `todayIso` do periodText e montado com os getters LOCAIS: `toISOString`
+ * devolve o dia em UTC, e a noite de um fuso negativo viraria "amanha".
+ */
+function todayIso() {
+  const d = new Date();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
 
 function icon(symbolId, cls = 'icon') {
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -26,20 +37,6 @@ function icon(symbolId, cls = 'icon') {
   use.setAttribute('href', `#${symbolId}`);
   svg.append(use);
   return svg;
-}
-
-const fmtDate = (iso) => {
-  if (!iso) return null;
-  const [y, m, d] = iso.split('-');
-  return `${d}/${m}/${y}`;
-};
-
-function periodText(rec) {
-  const start = fmtDate(rec.startDate);
-  const end = fmtDate(rec.endDate);
-  if (start && end) return `${start} – ${end}`;
-  if (start) return `Desde ${start} · ainda lendo`;
-  return 'Sem datas';
 }
 
 export function createDetails(root) {
@@ -123,6 +120,20 @@ export function createDetails(root) {
         place();
       });
       top.append(img);
+
+      // A `-M` do cache pinta na hora; a `-L` aguca quando chegar. O probe e
+      // um Image SEM crossOrigin (a mesma entrada de cache do <img>; o
+      // `loadImageQuiet` e CORS e baixaria a `-L` de novo) e nao toca no
+      // disjuntor — imagem de DOM nunca passa por `loadImage`. A caixa da
+      // capa e fixa no CSS, entao a troca nao muda o layout nem exige place().
+      const hi = hiResUrl(rec.coverUrl);
+      if (hi) {
+        const probe = new Image();
+        probe.onload = () => {
+          if (img.isConnected) img.src = hi;
+        };
+        probe.src = hi;
+      }
     }
 
     const text = document.createElement('div');
@@ -142,8 +153,9 @@ export function createDetails(root) {
 
     const dates = document.createElement('p');
     dates.className = 'details__dates';
-    const pages = rec.pages ? ` · ${rec.pages} páginas` : '';
-    dates.textContent = periodText(rec) + pages;
+    const pages = pagesText(rec.pages);
+    dates.textContent =
+      periodText(rec.startDate, rec.endDate, todayIso()) + (pages ? ` · ${pages}` : '');
     text.append(dates);
 
     top.append(text);

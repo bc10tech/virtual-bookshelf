@@ -696,6 +696,9 @@ textarea:user-invalid {
   align-items: center;
   gap: 10px;
   padding: 7px 8px;
+  /* Alvo de toque: as linhas com capa ja passam de 44px; isto cobre a opcao
+     "cadastrar manualmente", que e so texto — e e a saida do fluxo. */
+  min-height: 44px;
   border-radius: 8px;
   cursor: pointer;
 }
@@ -875,6 +878,26 @@ textarea:user-invalid {
   margin-top: 2px;
 }
 
+/* Rodape do form de livro: gruda no fundo do painel enquanto o resto rola,
+   sangrando o padding do .panel com margens negativas para o fundo cobrir o
+   conteudo que passa por baixo. Confirmar (e a mensagem de erro, que mora
+   aqui) ficam sempre a vista — e o fail() do panel.js conta com isso. */
+.form__footer {
+  position: sticky;
+  bottom: -18px; /* anula o padding-bottom do .panel desktop */
+  margin: 12px -18px -18px;
+  padding: 10px 18px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
+  display: grid;
+  gap: 8px;
+}
+
+.form__footer .msg {
+  margin: 0;
+}
+
 .btn {
   min-height: 44px;
   padding: 0 18px;
@@ -1037,25 +1060,35 @@ textarea:user-invalid {
   height: 16px;
 }
 
+/* Capa em cima, texto centralizado embaixo: frontispicio, nao ficha. */
 .details__top {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  text-align: center;
 }
 
+.details__top > div {
+  min-width: 0;
+  width: 100%;
+}
+
+/* A caixa e FIXA de proposito: a troca -M -> -L do JS nao muda o layout, e por
+   isso o cartao nao precisa ser reposicionado no load da capa. */
 .details__cover {
-  width: 62px;
-  height: 92px;
+  width: 132px;
+  height: 198px;
   flex: none;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: 6px;
   background: var(--surface-2);
-  box-shadow: var(--shadow-sm);
+  box-shadow: var(--shadow-lg);
 }
 
 .details h3 {
   margin: 0 0 2px;
-  font-size: 1.02rem;
+  font-size: 1.1rem;
   font-weight: 700;
   line-height: 1.25;
 }
@@ -1067,32 +1100,38 @@ textarea:user-invalid {
 }
 
 .details__dates {
-  margin: 6px 0 0;
-  font-size: 0.78rem;
+  margin: 8px 0 0;
+  font-size: 0.82rem;
+  font-style: italic;
   color: var(--ink-faint);
 }
 
 .details__stars {
   display: flex;
+  justify-content: center;
   gap: 2px;
-  margin-top: 6px;
+  margin-top: 8px;
 }
 
 /* Mesmo slot das estrelas do formulario, so que menor e sem area de clique. */
 .star--sm {
-  --glyph: 16px;
-  width: 16px;
-  height: 16px;
+  --glyph: 20px;
+  width: 22px;
+  height: 22px;
 }
 
 .details__review {
-  margin: 12px 0 0;
-  padding-top: 12px;
+  margin: 14px 0 0;
+  padding-top: 14px;
   border-top: 1px solid var(--line);
-  font-size: 0.9rem;
-  line-height: 1.55;
+  font-size: 0.95rem;
+  line-height: 1.65;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  hyphens: auto;
+  /* O __top centralizou; a pagina volta a esquerda (e nao justifica: uma
+     medida de ~300px criaria rios). */
+  text-align: left;
 }
 
 .details__close {
@@ -1598,19 +1637,29 @@ body:has(.owner-badge:not([hidden])) .pager {
 /* ----------------------------------------------------------------- mobile --- */
 
 @media (max-width: 640px) {
-  /* O mesmo painel vira bottom sheet — e continua sendo so transform. */
+  /* O mesmo painel vira bottom sheet — e continua sendo so transform.
+     `--kb` e a altura do teclado virtual, escrita pelo panel.js via
+     visualViewport (iOS; no Android o `interactive-widget` da meta viewport
+     ja encolhe o dvh e `--kb` fica ~0 — as camadas nao se somam). */
   .panel {
     top: auto;
     right: 0;
     left: 0;
-    bottom: 0;
+    bottom: var(--kb, 0px);
     width: 100%;
-    max-height: min(80dvh, 640px);
+    max-height: min(calc(80dvh - var(--kb, 0px)), 640px);
     padding: 16px 16px calc(16px + var(--safe-b));
     border-radius: var(--r-lg) var(--r-lg) 0 0;
     border-bottom: 0;
     transform-origin: 50% 100%;
     transform: translateY(100%);
+  }
+
+  .form__footer {
+    bottom: calc(-16px - var(--safe-b));
+    margin: 12px -16px calc(-16px - var(--safe-b));
+    padding: 10px 16px calc(16px + var(--safe-b));
+    border-radius: 0;
   }
 
   .panel.is-open {
